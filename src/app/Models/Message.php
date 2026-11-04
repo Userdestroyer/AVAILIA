@@ -11,7 +11,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 #[Fillable([
     'chat_id', 'ai_model_id', 'role', 'status', 'content', 'error',
-    'input_tokens', 'output_tokens', 'cache_read_tokens', 'cache_write_tokens', 'cost_usd',
+    'input_tokens', 'output_tokens', 'cache_read_tokens', 'cache_write_tokens', 'cost', 'cost_currency',
 ])]
 class Message extends Model
 {
@@ -24,7 +24,7 @@ class Message extends Model
             'output_tokens' => 'integer',
             'cache_read_tokens' => 'integer',
             'cache_write_tokens' => 'integer',
-            'cost_usd' => 'decimal:8',
+            'cost' => 'decimal:8',
         ];
     }
 
@@ -43,6 +43,6 @@ class Message extends Model
      */
     public function costIn(string $currency): string
     {
-        return app(CurrencyConverter::class)->fromUsd($this->cost_usd, $currency, $this->created_at);
+        return app(CurrencyConverter::class)->convert($this->cost, $this->cost_currency, $currency, $this->created_at);
     }
 }

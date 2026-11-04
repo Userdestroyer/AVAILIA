@@ -6,7 +6,7 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-#[Fillable(['slug', 'name', 'is_active', 'sort'])]
+#[Fillable(['slug', 'name', 'product', 'is_active', 'sort'])]
 class Vendor extends Model
 {
     protected function casts(): array

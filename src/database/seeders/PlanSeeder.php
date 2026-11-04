@@ -10,6 +10,7 @@ class PlanSeeder extends Seeder
 {
     /**
      * Лимиты — стартовые значения, правятся в БД. null — без ограничений.
+     * Бюджет — в валюте тарифа (по умолчанию RUB).
      */
     public function run(): void
     {
@@ -19,7 +20,7 @@ class PlanSeeder extends Seeder
                 'name' => 'Гость',
                 'daily_request_limit' => 20,
                 'monthly_token_limit' => 200_000,
-                'monthly_budget_usd' => 1,
+                'monthly_budget' => 100,
             ],
             [
                 'code' => PlanCode::Promo->value,
@@ -27,7 +28,7 @@ class PlanSeeder extends Seeder
                 'description' => 'Повышенные лимиты для своих, выдаётся вручную',
                 'daily_request_limit' => 100,
                 'monthly_token_limit' => 2_000_000,
-                'monthly_budget_usd' => 5,
+                'monthly_budget' => 500,
                 'is_public' => false,
             ],
             [
@@ -35,7 +36,7 @@ class PlanSeeder extends Seeder
                 'name' => 'Pro',
                 'daily_request_limit' => 500,
                 'monthly_token_limit' => 10_000_000,
-                'monthly_budget_usd' => 20,
+                'monthly_budget' => 2000,
             ],
             [
                 'code' => PlanCode::Unlimited->value,

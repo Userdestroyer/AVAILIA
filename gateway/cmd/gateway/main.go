@@ -4,28 +4,49 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
+
+	"availia/gateway/internal/config"
+	"availia/gateway/internal/laravel"
+	"availia/gateway/internal/stream"
+
+	"github.com/redis/go-redis/v9"
 )
 
 func main() {
-	addr := os.Getenv("GATEWAY_ADDR")
-	if addr == "" {
-		addr = ":8080"
+	cfg, err := config.Load()
+	if err != nil {
+		slog.Error("config", "err", err)
+		os.Exit(1)
 	}
+
+	rdb := redis.NewClient(&redis.Options{Addr: cfg.RedisAddr, Password: cfg.RedisPassword, DB: cfg.RedisDB})
+	defer rdb.Close()
+
+	upstream := http.DefaultTransport.(*http.Transport).Clone()
+	// Заголовки ответа приходят быстро и в стрим-режиме; дальше тело может идти минутами
+	upstream.ResponseHeaderTimeout = 2 * time.Minute
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 	})
+	mux.Handle("GET /stream", &stream.Handler{
+		Redis:     rdb,
+		Providers: cfg.Providers,
+		Laravel:   &laravel.Client{BaseURL: cfg.LaravelURL, Secret: cfg.Secret, HTTP: &http.Client{Timeout: 30 * time.Second}},
+		Upstream:  &http.Client{Transport: upstream},
+	})
 
+	// WriteTimeout не ставим — он оборвал бы долгие стримы
 	srv := &http.Server{
-		Addr:              addr,
+		Addr:              cfg.Addr,
 		Handler:           mux,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
@@ -34,9 +55,10 @@ func main() {
 	defer stop()
 
 	go func() {
-		log.Printf("gateway listening on %s", addr)
+		slog.Info("gateway listening", "addr", cfg.Addr)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Fatal(err)
+			slog.Error("listen", "err", err)
+			os.Exit(1)
 		}
 	}()
 

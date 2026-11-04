@@ -17,11 +17,12 @@ return new class extends Migration
             $table->string('name');
             $table->text('description')->nullable();
             $table->unsignedInteger('context_window')->nullable();
-            // Цены в USD за 1M токенов
+            // Цены за 1M токенов в валюте провайдера (proxyapi — рубли)
             $table->decimal('price_input', 12, 4)->default(0);
             $table->decimal('price_output', 12, 4)->default(0);
             $table->decimal('price_cache_read', 12, 4)->nullable();
             $table->decimal('price_cache_write', 12, 4)->nullable();
+            $table->char('price_currency', 3)->default('USD');
             $table->boolean('is_active')->default(true);
             $table->unsignedSmallInteger('sort')->default(0);
             $table->timestamps();

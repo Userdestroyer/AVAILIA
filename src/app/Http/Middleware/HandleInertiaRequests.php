@@ -37,8 +37,10 @@ class HandleInertiaRequests extends Middleware
                     'role' => $user->role,
                     'currency' => $user->currency,
                     'plan' => $user->effectivePlan()->only('code', 'name'),
+                    'settings' => $user->interfaceSettings(),
                 ] : null,
             ],
+            'recentChats' => fn () => $user?->chats()->latest('updated_at')->limit(30)->get(['id', 'title']) ?? [],
         ];
     }
 }

@@ -12,17 +12,21 @@ class CurrencyConverter
     private array $memo = [];
 
     /**
-     * Перевод суммы из USD в валюту по курсу на дату (или ближайшему более раннему).
+     * Перевод суммы между валютами через USD по курсу на дату (или ближайшему более раннему).
      */
-    public function fromUsd(string $amountUsd, string $currency, ?CarbonInterface $date = null): string
+    public function convert(string $amount, string $from, string $to, ?CarbonInterface $date = null): string
     {
-        $currency = strtoupper($currency);
+        $from = strtoupper($from);
+        $to = strtoupper($to);
 
-        if ($currency === 'USD') {
-            return $amountUsd;
+        if ($from === $to) {
+            return $amount;
         }
 
-        return bcmul($amountUsd, $this->rate($currency, $date ?? now()), 8);
+        $date ??= now();
+        $usd = $from === 'USD' ? $amount : bcdiv($amount, $this->rate($from, $date), 8);
+
+        return $to === 'USD' ? $usd : bcmul($usd, $this->rate($to, $date), 8);
     }
 
     /**

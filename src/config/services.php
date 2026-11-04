@@ -35,9 +35,4 @@ return [
         ],
     ],
 
-    'proxyapi' => [
-        'key' => env('PROXY_API_KEY'),
-        'url' => env('PROXY_API_URL', 'https://api.proxyapi.ru'),
-    ],
-
 ];

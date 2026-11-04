@@ -10,9 +10,11 @@ RUN apk add --no-cache git \
 # air — горячая перезагрузка в dev. Ставим в /usr/local/bin, чтобы volume на /go его не перекрыл
 RUN GOBIN=/usr/local/bin go install github.com/air-verse/air@v1.67.4
 
-# Кэши модулей и сборки — в volume go_cache (/go)
+# Кэши модулей и сборки — в volume go_cache (/go). Volume наследует владельца из образа,
+# поэтому /go отдаём юзеру app — иначе go get падает с permission denied
 ENV GOCACHE=/go/.cache/go-build \
     GOFLAGS=-buildvcs=false
+RUN mkdir -p /go/pkg /go/.cache && chown -R app:app /go
 
 WORKDIR /app
 

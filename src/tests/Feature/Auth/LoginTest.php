@@ -21,7 +21,8 @@ class LoginTest extends TestCase
     #[TestDox('Гость не попадает в приложение и уходит на страницу входа')]
     public function test_guest_is_redirected_to_login(): void
     {
-        $this->get('/')->assertRedirect('/login');
+        $this->get('/')->assertRedirect('/text');
+        $this->get('/text')->assertRedirect('/login');
     }
 
     #[Group('D3')]
@@ -37,10 +38,11 @@ class LoginTest extends TestCase
         $user = User::factory()->create();
 
         $this->post('/login', ['email' => $user->email, 'password' => 'password'])
-            ->assertRedirect('/');
+            ->assertRedirect('/text');
         $this->assertAuthenticatedAs($user);
 
-        $this->get('/')->assertOk();
+        $this->get('/text')->assertOk();
+        $this->get('/login')->assertRedirect('/text');
 
         $this->post('/logout')->assertRedirect('/login');
         $this->assertGuest();

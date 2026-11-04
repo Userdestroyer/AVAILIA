@@ -10,14 +10,14 @@ class VendorSeeder extends Seeder
     public function run(): void
     {
         $vendors = [
-            'openai' => 'OpenAI',
-            'anthropic' => 'Anthropic',
-            'google' => 'Google',
-            'xai' => 'xAI',
+            ['slug' => 'anthropic', 'name' => 'Anthropic', 'product' => 'Claude'],
+            ['slug' => 'google', 'name' => 'Google', 'product' => 'Gemini'],
+            ['slug' => 'xai', 'name' => 'xAI', 'product' => 'Grok'],
+            ['slug' => 'openai', 'name' => 'OpenAI', 'product' => 'ChatGPT'],
         ];
 
-        foreach (array_keys($vendors) as $sort => $slug) {
-            Vendor::updateOrCreate(['slug' => $slug], ['name' => $vendors[$slug], 'sort' => $sort]);
+        foreach ($vendors as $sort => $vendor) {
+            Vendor::updateOrCreate(['slug' => $vendor['slug']], $vendor + ['sort' => $sort]);
         }
     }
 }

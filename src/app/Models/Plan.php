@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 #[Fillable([
     'code', 'name', 'description', 'price_monthly', 'currency',
-    'daily_request_limit', 'monthly_token_limit', 'monthly_budget_usd',
+    'daily_request_limit', 'monthly_token_limit', 'monthly_budget',
     'is_public', 'sort',
 ])]
 class Plan extends Model
@@ -20,7 +20,7 @@ class Plan extends Model
             'price_monthly' => 'decimal:2',
             'daily_request_limit' => 'integer',
             'monthly_token_limit' => 'integer',
-            'monthly_budget_usd' => 'decimal:2',
+            'monthly_budget' => 'decimal:2',
             'is_public' => 'boolean',
         ];
     }

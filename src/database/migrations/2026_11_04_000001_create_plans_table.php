@@ -18,7 +18,8 @@ return new class extends Migration
             // Лимиты: null — без ограничений
             $table->unsignedInteger('daily_request_limit')->nullable();
             $table->unsignedBigInteger('monthly_token_limit')->nullable();
-            $table->decimal('monthly_budget_usd', 10, 2)->nullable();
+            // Бюджет себестоимости в месяц, в валюте тарифа
+            $table->decimal('monthly_budget', 10, 2)->nullable();
             // Непубличные тарифы (promo) не показываются в списке, выдаются вручную
             $table->boolean('is_public')->default(true);
             $table->unsignedSmallInteger('sort')->default(0);

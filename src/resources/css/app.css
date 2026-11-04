@@ -1,10 +1,164 @@
 @import 'tailwindcss';
+@plugin '@tailwindcss/typography';
 
 @source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
 @source '../../storage/framework/views/*.php';
 @source '../js/**/*.vue';
 
 @theme {
-    --font-sans: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji',
-        'Segoe UI Symbol', 'Noto Color Emoji';
+    --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'SF Pro Display', ui-sans-serif, system-ui, sans-serif,
+        'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+
+    --color-cool: #5b8cff;
+    --color-cool-soft: #9db8ff;
+    --color-hot: #ff8a4c;
+    --color-hot-soft: #ffc29a;
+}
+
+/* Цвета тем — в паре с resources/js/lib/theme.js (там полотно фона для шейдера) */
+:root {
+    --app-bg: #2a3142;
+    --glass-bg: rgb(200 210 230 / 0.26);
+    --glass-border: rgb(255 255 255 / 0.1);
+    --glass-highlight: rgb(255 255 255 / 0.08);
+    /* Насколько стекло приглушает всполохи под собой — чтобы свет не спорил с текстом */
+    --glass-dim: 0.7;
+    /* Элементы на стекле: поля, кнопки, сообщения юзера */
+    --inset-bg: rgb(255 255 255 / 0.07);
+    --inset-border: rgb(255 255 255 / 0.06);
+    --bubble-bg: rgb(255 255 255 / 0.1);
+    /* «Скобки» ответа ассистента */
+    --answer-border: rgb(255 255 255 / 0.12);
+}
+
+/* Тёмная тема — тёмное (дымчатое) стекло, а не белёсое */
+:root[data-theme='dark'] {
+    --app-bg: #111317;
+    --glass-bg: rgb(14 16 20 / 0.55);
+    --glass-border: rgb(255 255 255 / 0.06);
+    --glass-highlight: rgb(255 255 255 / 0.04);
+    --glass-dim: 0.62;
+    --inset-bg: rgb(255 255 255 / 0.045);
+    --inset-border: rgb(255 255 255 / 0.05);
+    --bubble-bg: rgb(255 255 255 / 0.07);
+    --answer-border: rgb(255 255 255 / 0.09);
+}
+
+@layer base {
+    html {
+        color-scheme: dark;
+        font-feature-settings: 'cv11', 'ss01';
+        -webkit-font-smoothing: antialiased;
+    }
+
+    body {
+        @apply bg-(--app-bg) font-light text-white/90;
+    }
+}
+
+/* Матовое стекло: размытие подложки + тонкое зерно, чтобы стекло было не глянцевым */
+@utility glass {
+    background-color: var(--glass-bg);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 .05 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    backdrop-filter: blur(48px) saturate(120%) brightness(var(--glass-dim));
+    -webkit-backdrop-filter: blur(48px) saturate(120%) brightness(var(--glass-dim));
+    border: 1px solid var(--glass-border);
+    box-shadow:
+        inset 0 1px 0 var(--glass-highlight),
+        0 24px 60px -24px rgb(0 0 0 / 0.45);
+}
+
+/* Вложенный элемент на стекле: кнопки, поля, активные пункты */
+@utility glass-inset {
+    background-color: var(--inset-bg);
+    border: 1px solid var(--inset-border);
+}
+
+/* Ответ ассистента: «скобки» сверху и снизу — линия скругляется по углам и обрывается
+   сразу после изгиба, по бокам не продолжается; фона нет — под ответом то же стекло */
+@utility answer-frame {
+    position: relative;
+
+    &::before, &::after {
+        content: '';
+        position: absolute;
+        inset-inline: 0;
+        height: 1rem;
+        border: 1px solid var(--answer-border);
+        pointer-events: none;
+    }
+
+    &::before {
+        top: 0;
+        border-bottom: 0;
+        border-radius: 1rem 1rem 0 0;
+    }
+
+    &::after {
+        bottom: 0;
+        border-top: 0;
+        border-radius: 0 0 1rem 1rem;
+    }
+}
+
+/* Лента сообщений: тонкий полупрозрачный скроллбар */
+@utility scrollbar-glass {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(255 255 255 / 0.2) transparent;
+}
+
+/* Текст плавно уходит под края стеклянного блока при скролле */
+@utility scroll-fade {
+    mask-image: linear-gradient(to bottom, transparent 0, black 2rem, black calc(100% - 2rem), transparent 100%);
+}
+
+/* Ответы модели (Markdown): типографика плагина, подогнанная под стекло */
+.markdown {
+    --tw-prose-invert-body: rgb(255 255 255 / 0.88);
+    --tw-prose-invert-headings: rgb(255 255 255 / 0.95);
+    --tw-prose-invert-bold: rgb(255 255 255 / 0.97);
+    --tw-prose-invert-links: var(--color-cool-soft);
+    --tw-prose-invert-bullets: rgb(255 255 255 / 0.4);
+    --tw-prose-invert-counters: rgb(255 255 255 / 0.5);
+    --tw-prose-invert-quotes: rgb(255 255 255 / 0.75);
+    --tw-prose-invert-quote-borders: rgb(255 255 255 / 0.2);
+    --tw-prose-invert-hr: rgb(255 255 255 / 0.12);
+    --tw-prose-invert-code: rgb(255 255 255 / 0.95);
+    --tw-prose-invert-pre-bg: rgb(0 0 0 / 0.28);
+    --tw-prose-invert-th-borders: rgb(255 255 255 / 0.2);
+    --tw-prose-invert-td-borders: rgb(255 255 255 / 0.1);
+    font-size: 16px;
+    line-height: 1.7;
+
+    & > :first-child { margin-top: 0; }
+    & > :last-child { margin-bottom: 0; }
+
+    & :where(h1, h2, h3, h4) { font-weight: 500; }
+    & :where(h1) { font-size: 1.5em; }
+    & :where(h2) { font-size: 1.3em; margin-top: 1.4em; margin-bottom: 0.6em; }
+    & :where(h3) { font-size: 1.12em; margin-top: 1.2em; margin-bottom: 0.5em; }
+    & :where(p, ul, ol) { margin-top: 0.6em; margin-bottom: 0.6em; }
+    & :where(li) { margin-top: 0.2em; margin-bottom: 0.2em; }
+
+    /* Инлайн-код — плашкой, без обратных кавычек плагина */
+    & :where(code):not(:where(pre code)) {
+        padding: 0.15em 0.4em;
+        border-radius: 0.4em;
+        background: rgb(255 255 255 / 0.1);
+        font-weight: 400;
+        font-size: 0.9em;
+        &::before, &::after { content: none; }
+    }
+
+    & :where(pre) {
+        border: 1px solid rgb(255 255 255 / 0.08);
+        border-radius: 0.9rem;
+        font-size: 0.88em;
+    }
+    /* Без :where — CSS темы highlight.js грузится позже и иначе перебивает фон (двойная рамка) */
+    & pre code.hljs { background: transparent; padding: 0; }
+
+    /* Цитаты — без кавычек, которые добавляет плагин */
+    & :where(blockquote p)::before, & :where(blockquote p)::after { content: none; }
+    & :where(blockquote) { font-style: normal; }
 }

@@ -61,13 +61,15 @@ services:
       - go_cache:/go
     environment:
       GATEWAY_ADDR: ":8080"
-      DATABASE_URL: "postgres://${DB_USERNAME}:${DB_PASSWORD}@postgres:5432/${DB_DATABASE}?sslmode=disable"
       REDIS_ADDR: "redis:6379"
       REDIS_PASSWORD: ${REDIS_PASSWORD}
-      PROXY_API_URL: ${PROXY_API_URL:-https://api.proxyapi.ru}
+      PROXY_API_URL: ${PROXY_API_URL:-https://api.proxyapi.ru/v1}
       PROXY_API_KEY: ${PROXY_API_KEY:-}
+      REDIS_DB: "2"
+      GATEWAY_SECRET: ${GATEWAY_SECRET:?error}
+      # Сюда гейтвей отчитывается о готовом ответе
+      LARAVEL_URL: "http://nginx"
     depends_on:
-      - postgres
       - redis
     networks:
       - availia

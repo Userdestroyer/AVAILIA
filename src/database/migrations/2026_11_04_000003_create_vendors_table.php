@@ -13,6 +13,8 @@ return new class extends Migration
             // По slug Go-гейтвей выбирает адаптер API (openai, anthropic, google, xai)
             $table->string('slug')->unique();
             $table->string('name');
+            // Название продукта для интерфейса: ChatGPT, Claude, Gemini, Grok
+            $table->string('product')->nullable();
             $table->boolean('is_active')->default(true);
             $table->unsignedSmallInteger('sort')->default(0);
             $table->timestamps();
