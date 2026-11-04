@@ -14,6 +14,8 @@ export const THEMES = {
         idleSideMix: 0.55,
         // Яркость вен в покое: тише, чтобы не спорить с текстом
         idleGlow: 0.75,
+        // Насколько матовое стекло приглушает свет под собой (в паре с --glass-dim в app.css)
+        glassDim: 0.7,
     },
     dark: {
         label: 'Тёмная',
@@ -25,6 +27,7 @@ export const THEMES = {
         idleSide: [0.58, 0.4, 0.88],
         idleSideMix: 0.6,
         idleGlow: 0.55,
+        glassDim: 0.62,
     },
 };
 

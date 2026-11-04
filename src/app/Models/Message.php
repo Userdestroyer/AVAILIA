@@ -10,7 +10,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 #[Fillable([
-    'chat_id', 'ai_model_id', 'role', 'status', 'content', 'error',
+    'chat_id', 'parent_id', 'ai_model_id', 'role', 'status', 'content', 'error',
     'input_tokens', 'output_tokens', 'cache_read_tokens', 'cache_write_tokens', 'cost', 'cost_currency',
 ])]
 class Message extends Model
@@ -31,6 +31,14 @@ class Message extends Model
     public function chat(): BelongsTo
     {
         return $this->belongsTo(Chat::class);
+    }
+
+    /**
+     * Вопрос, на который отвечает ответ ассистента.
+     */
+    public function parent(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'parent_id');
     }
 
     public function aiModel(): BelongsTo

@@ -1,5 +1,6 @@
 import { createApp, h } from 'vue';
 import { createInertiaApp } from '@inertiajs/vue3';
+import { vFrost } from './composables/useFrost';
 
 const appName = import.meta.env.VITE_APP_NAME || 'AVAILIA';
 
@@ -13,6 +14,7 @@ createInertiaApp({
     setup({ el, App, props, plugin }) {
         createApp({ render: () => h(App, props) })
             .use(plugin)
+            .directive('frost', vFrost)
             .mount(el);
     },
 });

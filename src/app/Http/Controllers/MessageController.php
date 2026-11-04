@@ -16,9 +16,13 @@ class MessageController extends Controller
     {
         $user = $request->user();
 
+        // Каждая модель мульти-запроса — отдельный запрос в счёт дневного лимита
+        $modelIds = array_map('intval', $request->input('ai_model_ids'));
         $limit = $user->effectivePlan()->daily_request_limit;
-        if ($limit !== null && $user->requestsToday() >= $limit) {
-            return response()->json(['message' => "Дневной лимит запросов исчерпан ({$limit}). Возвращайтесь завтра."], 429);
+        if ($limit !== null && $user->requestsToday() + count($modelIds) > $limit) {
+            $left = max(0, $limit - $user->requestsToday());
+
+            return response()->json(['message' => "Дневной лимит запросов: осталось {$left} из {$limit}."], 429);
         }
 
         // Чужой или несуществующий чат — 404, а не новый чат
@@ -27,7 +31,8 @@ class MessageController extends Controller
         $started = $stream->start(
             $user,
             $chat,
-            AiModel::findOrFail($request->integer('ai_model_id')),
+            // Порядок — как выбрал юзер: первая модель — основная
+            AiModel::findMany($modelIds)->sortBy(fn (AiModel $model) => array_search($model->id, $modelIds))->values(),
             $request->string('content')->trim(),
             new ChatOptions(
                 maxTokens: $request->input('max_tokens'),
@@ -38,8 +43,10 @@ class MessageController extends Controller
         return response()->json([
             'chat' => $started['chat']->only('id', 'title'),
             'user_message' => MessageResource::make($started['userMessage']),
-            'assistant_message' => MessageResource::make($started['assistantMessage']),
-            'stream_token' => $started['token'],
+            'answers' => array_map(fn (array $answer) => [
+                'message' => MessageResource::make($answer['message']),
+                'stream_token' => $answer['token'],
+            ], $started['answers']),
         ], 201);
     }
 }

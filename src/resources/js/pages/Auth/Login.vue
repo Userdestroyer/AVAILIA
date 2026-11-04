@@ -21,7 +21,7 @@ const submit = () => {
     <CausticBackground :thinking="form.processing" />
 
     <main class="flex min-h-dvh items-center justify-center px-4">
-        <form class="glass w-full max-w-sm space-y-5 rounded-[32px] p-8" @submit.prevent="submit">
+        <form v-frost class="glass w-full max-w-sm space-y-5 rounded-[32px] p-8" @submit.prevent="submit">
             <h1 class="pb-2 text-center text-4xl">
                 <Wordmark />
             </h1>

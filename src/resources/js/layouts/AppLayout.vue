@@ -20,7 +20,7 @@ const isActive = (id) => page.url === `/text/${id}`;
     <SettingsModal v-model:open="settingsOpen" />
 
     <div class="flex h-dvh gap-6 p-4 md:p-6">
-        <aside class="glass hidden w-72 shrink-0 flex-col rounded-3xl p-3 md:flex">
+        <aside v-frost class="glass hidden w-72 shrink-0 flex-col rounded-3xl p-3 md:flex">
             <div class="flex items-center justify-between px-2 py-2">
                 <div class="flex items-center gap-3">
                     <span class="flex size-9 items-center justify-center rounded-xl bg-gradient-to-br from-cool to-[#7c5cff] shadow-lg shadow-cool/30">

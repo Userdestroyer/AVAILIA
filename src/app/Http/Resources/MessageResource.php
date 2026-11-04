@@ -20,6 +20,7 @@ class MessageResource extends JsonResource
 
         return [
             'id' => $this->id,
+            'parent_id' => $this->parent_id,
             'role' => $this->role,
             'status' => $lost ? MessageStatus::Failed : $this->status,
             'content' => $this->content ?? '',

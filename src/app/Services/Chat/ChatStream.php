@@ -10,6 +10,7 @@ use App\Models\Message;
 use App\Models\User;
 use App\Services\Ai\AiProvider;
 use App\Services\Ai\Data\ChatOptions;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Redis;
 use Illuminate\Support\Str;
@@ -17,55 +18,85 @@ use Illuminate\Support\Str;
 /**
  * Жизненный цикл ответа: Laravel готовит запрос и кладёт его в Redis под одноразовым токеном,
  * Go-гейтвей стримит ответ и по завершении отчитывается сюда же — тут считается стоимость.
+ * Мульти-запрос: на один вопрос — несколько моделей, у каждой свой ответ, стрим и токен.
  */
 class ChatStream
 {
     public function __construct(private AiProvider $provider) {}
 
     /**
-     * @return array{chat: Chat, userMessage: Message, assistantMessage: Message, token: string}
+     * @param  Collection<int, AiModel>  $models
+     * @return array{chat: Chat, userMessage: Message, answers: list<array{message: Message, token: string}>}
      */
-    public function start(User $user, ?Chat $chat, AiModel $model, string $content, ChatOptions $options): array
+    public function start(User $user, ?Chat $chat, Collection $models, string $content, ChatOptions $options): array
     {
-        [$chat, $userMessage, $assistantMessage] = DB::transaction(function () use ($user, $chat, $model, $content) {
+        [$chat, $userMessage, $answers] = DB::transaction(function () use ($user, $chat, $models, $content) {
+            $primary = $models->first();
+
             if ($chat) {
-                $chat->update(['ai_model_id' => $model->id]);
+                $chat->update(['ai_model_id' => $primary->id]);
                 $chat->touch();
             } else {
-                $chat = $user->chats()->create(['ai_model_id' => $model->id, 'title' => Str::limit($content, 60)]);
+                $chat = $user->chats()->create(['ai_model_id' => $primary->id, 'title' => Str::limit($content, 60)]);
             }
 
-            return [
-                $chat,
-                $chat->messages()->create(['role' => MessageRole::User, 'content' => $content]),
-                $chat->messages()->create([
-                    'role' => MessageRole::Assistant,
-                    'status' => MessageStatus::Pending,
-                    'ai_model_id' => $model->id,
-                ]),
-            ];
+            $userMessage = $chat->messages()->create(['role' => MessageRole::User, 'content' => $content]);
+
+            $answers = $models->map(fn (AiModel $model) => $chat->messages()->create([
+                'parent_id' => $userMessage->id,
+                'role' => MessageRole::Assistant,
+                'status' => MessageStatus::Pending,
+                'ai_model_id' => $model->id,
+            ]));
+
+            return [$chat, $userMessage, $answers];
         });
 
-        // В историю идут сообщения юзера и удавшиеся ответы — без упавших и недописанных
-        $history = $chat->messages()
-            ->where('id', '<', $assistantMessage->id)
-            ->where(fn ($query) => $query
-                ->where('role', MessageRole::User)
-                ->orWhere('status', MessageStatus::Done))
-            ->orderBy('id')
-            ->get();
+        $conversation = $chat->messages()->where('id', '<=', $userMessage->id)->orderBy('id')->get();
+        $redis = Redis::connection('gateway');
 
-        $request = $this->provider->chatRequest($model->loadMissing('vendor'), $history, $options, stream: true);
+        $started = $answers->map(function (Message $answer) use ($models, $conversation, $options, $redis) {
+            $model = $models->firstWhere('id', $answer->ai_model_id)->loadMissing('vendor');
+            $request = $this->provider->chatRequest($model, $this->historyFor($conversation, $model), $options, stream: true);
 
-        // Ключ провайдера сюда не кладём — он есть у гейтвея; кладём только тело запроса
-        $token = Str::random(48);
-        Redis::connection('gateway')->setex("stream:{$token}", config('ai.gateway.stream_ttl'), json_encode([
-            'provider' => $this->provider->name(),
-            'message_id' => $assistantMessage->id,
-            'body' => $request->body,
-        ]));
+            // Ключ провайдера сюда не кладём — он есть у гейтвея; кладём только тело запроса
+            $token = Str::random(48);
+            $redis->setex("stream:{$token}", config('ai.gateway.stream_ttl'), json_encode([
+                'provider' => $this->provider->name(),
+                'message_id' => $answer->id,
+                'body' => $request->body,
+            ]));
 
-        return compact('chat', 'userMessage', 'assistantMessage', 'token');
+            return ['message' => $answer, 'token' => $token];
+        });
+
+        return ['chat' => $chat, 'userMessage' => $userMessage, 'answers' => $started->values()->all()];
+    }
+
+    /**
+     * История для конкретной модели: вопросы и по одному удавшемуся ответу на каждый —
+     * её собственный, а если в том ходе её не было — первый. Иначе модель увидела бы подряд
+     * несколько «своих» ответов от разных моделей.
+     *
+     * @param  Collection<int, Message>  $conversation
+     * @return Collection<int, Message>
+     */
+    private function historyFor(Collection $conversation, AiModel $model): Collection
+    {
+        $answers = $conversation
+            ->where('role', MessageRole::Assistant)
+            ->where('status', MessageStatus::Done)
+            ->groupBy('parent_id');
+
+        return $conversation
+            ->where('role', MessageRole::User)
+            ->flatMap(function (Message $question) use ($answers, $model) {
+                $turn = $answers->get($question->id);
+                $answer = $turn?->firstWhere('ai_model_id', $model->id) ?? $turn?->first();
+
+                return array_filter([$question, $answer]);
+            })
+            ->values();
     }
 
     /**

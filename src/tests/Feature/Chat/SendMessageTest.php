@@ -28,27 +28,55 @@ class SendMessageTest extends TestCase
     public function test_message_starts_stream_job(): void
     {
         config(['ai.providers.proxyapi.key' => 'provider-secret-key']);
-        $job = $this->captureStreamJob();
+        $jobs = $this->captureStreamJobs();
         $model = AiModel::where('slug', 'claude-sonnet-5-5')->first();
 
         $response = $this->actingAs($user = User::factory()->create())
-            ->postJson('/text/messages', ['ai_model_id' => $model->id, 'content' => '  Привет  ', 'max_tokens' => 1024])
+            ->postJson('/text/messages', ['ai_model_ids' => [$model->id], 'content' => '  Привет  ', 'max_tokens' => 1024])
             ->assertCreated()
             ->assertJsonPath('user_message.content', 'Привет')
-            ->assertJsonPath('assistant_message.status', MessageStatus::Pending->value);
+            ->assertJsonPath('answers.0.message.status', MessageStatus::Pending->value);
 
         $chat = $user->chats()->sole();
         $this->assertSame($response->json('chat.id'), $chat->id);
         $this->assertSame([MessageRole::User, MessageRole::Assistant], $chat->messages()->orderBy('id')->pluck('role')->all());
 
-        [$key, $payload] = $job();
-        $this->assertSame('stream:'.$response->json('stream_token'), $key);
+        [$key, $payload] = $jobs()[0];
+        $this->assertSame('stream:'.$response->json('answers.0.stream_token'), $key);
         $this->assertSame('proxyapi', $payload['provider']);
-        $this->assertSame($response->json('assistant_message.id'), $payload['message_id']);
+        $this->assertSame($response->json('answers.0.message.id'), $payload['message_id']);
         $this->assertSame('anthropic/claude-sonnet-5-5', $payload['body']['model']);
         $this->assertTrue($payload['body']['stream']);
         $this->assertSame([['role' => 'user', 'content' => 'Привет']], $payload['body']['messages']);
         $this->assertStringNotContainsString('provider-secret-key', json_encode($payload));
+    }
+
+    #[Group('D1')]
+    #[TestDox('Мульти-запрос: каждой модели свой ответ и стрим, в истории каждая видит свой прошлый ответ')]
+    public function test_multi_request_gives_each_model_its_own_history(): void
+    {
+        $jobs = $this->captureStreamJobs();
+        [$claude, $gemini] = [AiModel::where('slug', 'claude-haiku-5-5')->first(), AiModel::where('slug', 'gemini-4-argon')->first()];
+
+        $user = User::factory()->create();
+        $chat = $user->chats()->create();
+        $question = $chat->messages()->create(['role' => MessageRole::User, 'content' => 'Вопрос']);
+        foreach ([[$claude, 'от Claude'], [$gemini, 'от Gemini']] as [$model, $text]) {
+            $chat->messages()->create([
+                'parent_id' => $question->id, 'role' => MessageRole::Assistant, 'status' => MessageStatus::Done,
+                'ai_model_id' => $model->id, 'content' => $text,
+            ]);
+        }
+
+        $this->actingAs($user)
+            ->postJson('/text/messages', ['chat_id' => $chat->id, 'ai_model_ids' => [$gemini->id, $claude->id], 'content' => 'Ещё'])
+            ->assertCreated()
+            ->assertJsonCount(2, 'answers');
+
+        $sent = collect($jobs())->mapWithKeys(fn ($job) => [$job[1]['body']['model'] => array_column($job[1]['body']['messages'], 'content')]);
+        $this->assertSame(['Вопрос', 'от Gemini', 'Ещё'], $sent['google/gemini-4-argon']);
+        $this->assertSame(['Вопрос', 'от Claude', 'Ещё'], $sent['anthropic/claude-haiku-5-5']);
+        $this->assertSame(2, $chat->messages()->where('parent_id', '!=', $question->id)->whereNotNull('parent_id')->count());
     }
 
     #[Group('D1')]
@@ -60,37 +88,38 @@ class SendMessageTest extends TestCase
 
         $this->actingAs(User::factory()->create());
         $this->get("/text/{$chat->id}")->assertNotFound();
-        $this->postJson('/text/messages', ['chat_id' => $chat->id, 'ai_model_id' => $model->id, 'content' => 'Привет'])
+        $this->postJson('/text/messages', ['chat_id' => $chat->id, 'ai_model_ids' => [$model->id], 'content' => 'Привет'])
             ->assertNotFound();
         $this->assertSame(0, $chat->messages()->count());
     }
 
     #[Group('D1')]
-    #[TestDox('Сверх дневного лимита тарифа запрос не уходит к модели')]
+    #[TestDox('Сверх дневного лимита тарифа запрос не уходит к модели; мульти-запрос считается по числу моделей')]
     public function test_daily_plan_limit_blocks_requests(): void
     {
         Redis::shouldReceive('connection')->never();
 
         $user = User::factory()->create(['plan_id' => Plan::where('code', 'pro')->value('id')]);
-        $user->plan->update(['daily_request_limit' => 1]);
+        $user->plan->update(['daily_request_limit' => 2]);
         $chat = $user->chats()->create();
         $chat->messages()->create(['role' => MessageRole::Assistant, 'status' => MessageStatus::Done]);
 
+        // Осталась 1 попытка, а моделей — 2
         $this->actingAs($user)
-            ->postJson('/text/messages', ['chat_id' => $chat->id, 'ai_model_id' => AiModel::first()->id, 'content' => 'Ещё'])
+            ->postJson('/text/messages', ['chat_id' => $chat->id, 'ai_model_ids' => AiModel::limit(2)->pluck('id')->all(), 'content' => 'Ещё'])
             ->assertTooManyRequests();
     }
 
     /**
-     * Подменяет Redis и возвращает функцию, отдающую ключ и разобранное задание.
+     * Подменяет Redis и возвращает функцию, отдающую список [ключ, разобранное задание].
      */
-    private function captureStreamJob(): \Closure
+    private function captureStreamJobs(): \Closure
     {
-        $captured = null;
+        $captured = [];
 
         Redis::shouldReceive('connection')->with('gateway')->andReturnSelf();
-        Redis::shouldReceive('setex')->once()->withArgs(function ($key, $ttl, $payload) use (&$captured) {
-            $captured = [$key, json_decode($payload, true)];
+        Redis::shouldReceive('setex')->withArgs(function ($key, $ttl, $payload) use (&$captured) {
+            $captured[] = [$key, json_decode($payload, true)];
 
             return true;
         });
