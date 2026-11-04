@@ -1,0 +1,146 @@
+# Прод AVAILIA рядом с userdestroyer на одном VPS.
+# Наружу (80/443) смотрит nginx userdestroyer: по имени availia.userdestroyer.com он проксирует
+# сюда через общую docker-сеть edge. Сам AVAILIA портов наружу не открывает — см. DEPLOY.md.
+
+networks:
+  availia:
+  # Общая сеть с nginx userdestroyer; создаётся один раз: docker network create edge
+  edge:
+    external: true
+
+volumes:
+  postgres_data:
+    labels:
+      keep: "true"
+
+services:
+  nginx:
+    build:
+      context: ./dockerfiles
+      dockerfile: nginx.dockerfile
+    image: availia/nginx:latest
+    restart: unless-stopped
+    volumes:
+      - ./src:/var/www/html:delegated
+    depends_on:
+      - php
+      - gateway
+    networks:
+      availia:
+      edge:
+        # По этому имени nginx userdestroyer находит AVAILIA
+        aliases:
+          - availia-nginx
+
+  php:
+    build:
+      context: ./dockerfiles
+      dockerfile: php.dockerfile
+      args:
+        - UID=${HOST_UID:-1000}
+        - GID=${HOST_GID:-1000}
+    image: availia/php:latest
+    restart: unless-stopped
+    working_dir: /var/www/html
+    volumes:
+      - ./src:/var/www/html:delegated
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - availia
+
+  gateway:
+    build:
+      # Контекст — корень (нужен gateway/), лишнее отсекает .dockerignore
+      context: .
+      dockerfile: dockerfiles/go.prod.dockerfile
+    image: availia/gateway:latest
+    restart: unless-stopped
+    environment:
+      GATEWAY_ADDR: ":8080"
+      REDIS_ADDR: "redis:6379"
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?error}
+      REDIS_DB: "2"
+      PROXY_API_URL: ${PROXY_API_URL:-https://api.proxyapi.ru/v1}
+      PROXY_API_KEY: ${PROXY_API_KEY:?error}
+      GATEWAY_SECRET: ${GATEWAY_SECRET:?error}
+      LARAVEL_URL: "http://nginx"
+    depends_on:
+      - redis
+    networks:
+      - availia
+
+  postgres:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    # Только loopback и не 5432 — его занимает postgres userdestroyer.
+    # С ноута: ssh -L 5433:localhost:5433 user@VPS
+    ports:
+      - "127.0.0.1:${FORWARD_DB_PORT:-5433}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    environment:
+      POSTGRES_DB: ${DB_DATABASE:?error}
+      POSTGRES_USER: ${DB_USERNAME:?error}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?error}
+    networks:
+      - availia
+
+  redis:
+    image: redis:8-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?error}"]
+    # Портов наружу нет — 6379 на хосте занят redis userdestroyer, а снаружи он и не нужен
+    networks:
+      - availia
+
+  # Планировщик: обновление курсов валют (ЦБ доступен с российского VPS)
+  scheduler:
+    image: availia/php:latest
+    restart: unless-stopped
+    working_dir: /var/www/html
+    volumes:
+      - ./src:/var/www/html:delegated
+    command: ["/bin/sh", "-c", "while true; do php artisan schedule:run --no-ansi >> /dev/null 2>&1; sleep 60; done"]
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - availia
+
+  # ─────────────────────────────────────────────
+  # Одноразовые сервисы — docker compose -f docker-compose.prod.yml run --rm <name> <args>
+  # ─────────────────────────────────────────────
+
+  composer:
+    image: availia/php:latest
+    working_dir: /var/www/html
+    volumes:
+      - ./src:/var/www/html
+    entrypoint: ["composer"]
+    networks:
+      - availia
+    profiles: ["tools"]
+
+  artisan:
+    image: availia/php:latest
+    working_dir: /var/www/html
+    volumes:
+      - ./src:/var/www/html:delegated
+    entrypoint: ["php", "/var/www/html/artisan"]
+    networks:
+      - availia
+    profiles: ["tools"]
+    depends_on:
+      - postgres
+
+  npm:
+    image: node:current-alpine
+    working_dir: /var/www/html
+    volumes:
+      - ./src:/var/www/html
+    entrypoint: ["npm"]
+    networks:
+      - availia
+    profiles: ["tools"]

@@ -138,7 +138,6 @@ case "$CMD" in
         ;;
 
     install)
-        $DC run --rm gateway go mod download
         if [ "$ENV" = "prod" ]; then
             $EXEC php composer install --no-dev --optimize-autoloader
             $DC run --rm npm ci
@@ -148,6 +147,7 @@ case "$CMD" in
             $EXEC php php artisan route:cache
             $EXEC php php artisan view:cache
         else
+            $DC run --rm gateway go mod download
             $EXEC php composer install
             $DC run --rm npm install
             $DC run --rm npm run build
@@ -159,7 +159,6 @@ case "$CMD" in
         ;;
 
     update)
-        $DC run --rm gateway go mod download
         if [ "$ENV" = "prod" ]; then
             $EXEC php composer install --no-dev --optimize-autoloader
             $DC run --rm npm ci
@@ -169,6 +168,7 @@ case "$CMD" in
             $EXEC php php artisan route:cache
             $EXEC php php artisan view:cache
         else
+            $DC run --rm gateway go mod download
             $EXEC php composer install
             $DC run --rm npm install
             $DC run --rm npm run build

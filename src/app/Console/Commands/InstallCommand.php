@@ -24,6 +24,11 @@ class InstallCommand extends Command
 {
     public function handle(): int
     {
+        // Свежий .env из .env.example (например, на проде) — без ключа шифрования сессии не живут
+        if (! config('app.key')) {
+            $this->call('key:generate', ['--force' => true]);
+        }
+
         $this->call('migrate', ['--force' => true]);
         $this->call('db:seed', ['--force' => true]);
 
