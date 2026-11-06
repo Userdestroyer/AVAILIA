@@ -53,4 +53,32 @@ class GatewayCompleteTest extends TestCase
         $this->postJson($url, ['status' => 'failed', 'error' => 'late'], ['X-Gateway-Secret' => 'gateway-secret'])->assertOk();
         $this->assertSame(MessageStatus::Done, $answer->fresh()->status);
     }
+
+    #[Group('D1')]
+    #[TestDox('Поиски в интернете добавляются к себестоимости по цене за поиск, журнал поисков сохраняется')]
+    public function test_web_searches_are_added_to_cost(): void
+    {
+        config(['ai.gateway.secret' => 'gateway-secret']);
+
+        // Haiku: 30 ₽ / 150 ₽ за 1M; поиск у Anthropic — 1 ₽
+        $model = AiModel::where('slug', 'claude-haiku-5-5')->first();
+        $answer = User::factory()->create()->chats()->create()->messages()->create([
+            'role' => MessageRole::Assistant, 'status' => MessageStatus::Pending, 'ai_model_id' => $model->id,
+        ]);
+        $searches = [['id' => 'srvtoolu_1', 'status' => 'done', 'query' => 'курс доллара ЦБ']];
+
+        $this->postJson("/internal/gateway/messages/{$answer->id}/complete", [
+            'status' => 'done',
+            'format' => 'messages',
+            'content' => '81,79 ₽',
+            'usage' => ['input_tokens' => 14022, 'output_tokens' => 456, 'server_tool_use' => ['web_search_requests' => 1]],
+            'web_searches' => 1,
+            'searches' => $searches,
+        ], ['X-Gateway-Secret' => 'gateway-secret'])
+            // (14022 × 30 + 456 × 150) / 1M + 1 поиск × 1 ₽
+            ->assertJsonPath('message.cost', ['amount' => '1.48906000', 'currency' => 'RUB'])
+            ->assertJsonPath('message.searches', $searches);
+
+        $this->assertSame(1, $answer->fresh()->web_searches);
+    }
 }

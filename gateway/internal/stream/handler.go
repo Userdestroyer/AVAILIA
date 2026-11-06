@@ -29,7 +29,16 @@ const (
 type job struct {
 	Provider  string          `json:"provider"`
 	MessageID int64           `json:"message_id"`
+	Format    string          `json:"format"`
+	Path      string          `json:"path"`
 	Body      json.RawMessage `json:"body"`
+}
+
+// Куда можно слать запрос с ключом провайдера — только эти пути от его базового адреса
+var allowedPaths = map[string]string{
+	FormatChat:      "/chat/completions",
+	FormatResponses: "/responses",
+	FormatMessages:  "/messages",
 }
 
 type event struct {
@@ -133,11 +142,22 @@ func (h *Handler) generate(j job, provider config.Provider, events chan<- event,
 	ctx, cancel := context.WithTimeout(context.Background(), generationTimeout)
 	defer cancel()
 
-	content, usage, err := h.callProvider(ctx, j, provider, func(c Chunk) {
+	res, err := h.callProvider(ctx, j, provider, func(c Chunk) {
+		if c.Search != nil {
+			send(event{Name: "search", Data: c.Search})
+			return
+		}
 		send(event{Name: c.Kind, Data: map[string]string{"text": c.Text}})
 	})
 
-	result := laravel.Result{Status: "done", Content: content, Usage: usage}
+	result := laravel.Result{
+		Status:      "done",
+		Format:      j.Format,
+		Content:     res.Content,
+		Usage:       res.Usage,
+		WebSearches: res.WebSearches,
+		Searches:    res.Searches,
+	}
 	if err != nil {
 		slog.Warn("generation failed", "message_id", j.MessageID, "err", err)
 		result.Status = "failed"
@@ -154,28 +174,39 @@ func (h *Handler) generate(j job, provider config.Provider, events chan<- event,
 	send(event{Name: "done", Data: map[string]json.RawMessage{"message": message}})
 }
 
-func (h *Handler) callProvider(ctx context.Context, j job, provider config.Provider, emit func(Chunk)) (string, json.RawMessage, error) {
-	url := strings.TrimRight(provider.BaseURL, "/") + "/chat/completions"
+func (h *Handler) callProvider(ctx context.Context, j job, provider config.Provider, emit func(Chunk)) (Result, error) {
+	if j.Format == "" {
+		j.Format = FormatChat
+	}
+	path, ok := allowedPaths[j.Format]
+	if !ok || (j.Path != "" && j.Path != path) {
+		return Result{}, fmt.Errorf("неизвестный формат запроса: %s %s", j.Format, j.Path)
+	}
+
+	url := strings.TrimRight(provider.BaseURL, "/") + path
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(j.Body))
 	if err != nil {
-		return "", nil, err
+		return Result{}, err
 	}
 	req.Header.Set("Authorization", "Bearer "+provider.APIKey)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "text/event-stream")
+	if j.Format == FormatMessages {
+		req.Header.Set("anthropic-version", "2023-06-01")
+	}
 
 	resp, err := h.Upstream.Do(req)
 	if err != nil {
-		return "", nil, fmt.Errorf("провайдер недоступен: %w", err)
+		return Result{}, fmt.Errorf("провайдер недоступен: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return "", nil, fmt.Errorf("провайдер ответил %d: %s", resp.StatusCode, errorMessage(body))
+		return Result{}, fmt.Errorf("провайдер ответил %d: %s", resp.StatusCode, errorMessage(body))
 	}
 
-	return ReadChatStream(resp.Body, emit)
+	return Read(j.Format, resp.Body, emit)
 }
 
 // errorMessage достаёт текст ошибки из OpenAI-формата {"error":{"message":…}}.

@@ -16,6 +16,12 @@ return [
         'proxyapi' => [
             'url' => env('PROXY_API_URL', 'https://api.proxyapi.ru/v1'),
             'key' => env('PROXY_API_KEY'),
+            // Цена одного поиска в интернете, ₽ (proxyapi.ru/docs/web-search) — по слагу вендора
+            'web_search_prices' => [
+                'anthropic' => 1,
+                'openai' => 1,
+                'google' => 1.5,
+            ],
         ],
     ],
 

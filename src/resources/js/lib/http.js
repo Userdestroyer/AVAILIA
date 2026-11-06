@@ -12,6 +12,10 @@ export function patchJson(url, body) {
     return requestJson('PATCH', url, body);
 }
 
+export function deleteJson(url) {
+    return requestJson('DELETE', url);
+}
+
 async function requestJson(method, url, body) {
     const response = await fetch(url, {
         method,
@@ -22,10 +26,11 @@ async function requestJson(method, url, body) {
             'X-Requested-With': 'XMLHttpRequest',
             'X-XSRF-TOKEN': xsrfToken(),
         },
-        body: JSON.stringify(body),
+        body: body === undefined ? undefined : JSON.stringify(body),
     });
 
-    const data = await response.json().catch(() => ({}));
+    // 204 No Content — тела нет
+    const data = response.status === 204 ? {} : await response.json().catch(() => ({}));
 
     if (!response.ok) {
         const firstError = data.errors ? Object.values(data.errors)[0]?.[0] : null;

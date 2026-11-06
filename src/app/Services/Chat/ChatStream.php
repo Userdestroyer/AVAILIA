@@ -10,6 +10,7 @@ use App\Models\Message;
 use App\Models\User;
 use App\Services\Ai\AiProvider;
 use App\Services\Ai\Data\ChatOptions;
+use App\Services\Ai\Data\ChatRequest;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Redis;
@@ -57,13 +58,16 @@ class ChatStream
 
         $started = $answers->map(function (Message $answer) use ($models, $conversation, $options, $redis) {
             $model = $models->firstWhere('id', $answer->ai_model_id)->loadMissing('vendor');
-            $request = $this->provider->chatRequest($model, $this->historyFor($conversation, $model), $options, stream: true);
+            $request = $this->provider->request($model, $this->historyFor($conversation, $model), $options);
 
             // Ключ провайдера сюда не кладём — он есть у гейтвея; кладём только тело запроса
             $token = Str::random(48);
             $redis->setex("stream:{$token}", config('ai.gateway.stream_ttl'), json_encode([
                 'provider' => $this->provider->name(),
                 'message_id' => $answer->id,
+                // Формат определяет, как гейтвей разбирает стрим; путь — куда слать (база — у гейтвея)
+                'format' => $request->format,
+                'path' => $request->path,
                 'body' => $request->body,
             ]));
 
@@ -102,7 +106,7 @@ class ChatStream
     /**
      * Гейтвей сообщил итог стрима: сохраняем текст, токены и себестоимость.
      *
-     * @param  array{status: string, content?: ?string, usage?: ?array, error?: ?string}  $result
+     * @param  array{status: string, format?: ?string, content?: ?string, usage?: ?array, web_searches?: ?int, searches?: ?array, error?: ?string}  $result
      */
     public function complete(Message $message, array $result): Message
     {
@@ -116,13 +120,24 @@ class ChatStream
                 'status' => MessageStatus::Failed,
                 'content' => $result['content'] ?? null,
                 'error' => $result['error'] ?? 'Модель не ответила',
+                'search_log' => $result['searches'] ?? null,
             ]);
 
             return $message;
         }
 
-        $usage = $this->provider->parseUsage($result['usage'] ?? []);
+        $usage = $this->provider->parseUsage($result['usage'] ?? [], $result['format'] ?? ChatRequest::FORMAT_CHAT);
+        $searches = (int) ($result['web_searches'] ?? 0);
         $model = $message->aiModel;
+
+        // Себестоимость = токены + каждый поиск по цене агрегатора
+        $cost = $model
+            ? bcadd(
+                $model->calculateCost($usage->input, $usage->output, $usage->cacheRead, $usage->cacheWrite),
+                bcmul((string) $searches, $this->provider->webSearchPrice($model->loadMissing('vendor')), 8),
+                8,
+            )
+            : '0';
 
         $message->update([
             'status' => MessageStatus::Done,
@@ -131,7 +146,9 @@ class ChatStream
             'output_tokens' => $usage->output,
             'cache_read_tokens' => $usage->cacheRead,
             'cache_write_tokens' => $usage->cacheWrite,
-            'cost' => $model?->calculateCost($usage->input, $usage->output, $usage->cacheRead, $usage->cacheWrite) ?? '0',
+            'web_searches' => $searches,
+            'search_log' => $result['searches'] ?? null,
+            'cost' => $cost,
             'cost_currency' => $model?->price_currency ?? 'USD',
         ]);
 

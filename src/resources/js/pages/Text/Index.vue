@@ -10,6 +10,7 @@ import AnswerCarousel from '@/components/chat/AnswerCarousel.vue';
 import GlassToggle from '@/components/GlassToggle.vue';
 import ModelPicker from '@/components/ModelPicker.vue';
 import ModeShell from '@/components/ModeShell.vue';
+import { useMediaQuery } from '@/composables/useMediaQuery';
 import { useThinking } from '@/composables/useThinking';
 import { postJson } from '@/lib/http';
 
@@ -75,10 +76,34 @@ const EFFORTS = [
     { value: 'high', label: 'Глубокий' },
 ];
 const effort = ref('medium');
-const webSearch = ref(false);
 const deepThinking = ref(false);
 
+// ── Веб-поиск ──────────────────────────────────────────
+const webSearch = ref(false);
+// Каждый поиск ~1 ₽ + найденные страницы как ввод — держим лимит небольшим
+const SEARCH_LIMITS = [1, 2, 3, 4, 5];
+const maxWebSearches = ref(3);
+const domainsInput = ref('');
+const allowedDomains = computed(() => domainsInput.value.split(/[\s,;]+/).map((d) => d.trim()).filter(Boolean));
+
+// Что умеют вендоры выбранных моделей — подсказки под настройками поиска
+const targetVendors = computed(() => {
+    const slugs = new Set(targetModels.value.map((id) => allModels.value.find((m) => m.id === id)?.vendor));
+    return props.vendors.filter((v) => slugs.has(v.slug));
+});
+const searchHints = computed(() => {
+    const names = (filter) => targetVendors.value.filter(filter).map((v) => v.product).join(', ');
+    return [
+        names((v) => !v.web_search) && `${names((v) => !v.web_search)} — без поиска, ответит по своим знаниям`,
+        names((v) => v.web_search && !v.web_search.max_uses) && `${names((v) => v.web_search && !v.web_search.max_uses)} — число поисков решает сам`,
+        allowedDomains.value.length && names((v) => v.web_search && !v.web_search.domains)
+            && `${names((v) => v.web_search && !v.web_search.domains)} — не умеет ограничивать сайты`,
+    ].filter(Boolean);
+});
+
 const showSettings = ref(false);
+// Широкий экран — панель настроек стоит колонкой справа, иначе всплывает по кнопке
+const isWide = useMediaQuery('(min-width: 1280px)');
 
 // ── Переписка ──────────────────────────────────────────
 const chatId = ref(props.chat?.id ?? null);
@@ -151,6 +176,10 @@ watch(message, async () => {
     el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
 });
 
+// Временный id сообщения до ответа сервера. Не crypto.randomUUID(): его нет вне HTTPS и localhost,
+// а по http://<ip-в-локалке> отправка падала бы, оставив фон «думающим»
+let localSeq = 0;
+
 const send = async () => {
     const content = message.value.trim();
     if (!content || busy.value) return;
@@ -158,7 +187,7 @@ const send = async () => {
     error.value = null;
     sending.value = true;
 
-    messages.value.push({ id: `local-${crypto.randomUUID()}`, role: 'user', status: 'done', content });
+    messages.value.push({ id: `local-${++localSeq}`, role: 'user', status: 'done', content });
     const local = messages.value.length - 1;
     message.value = '';
     scrollToBottom(true, true);
@@ -171,6 +200,9 @@ const send = async () => {
             content,
             max_tokens: maxTokens.value,
             reasoning_effort: deepThinking.value ? effort.value : null,
+            web_search: webSearch.value,
+            max_web_searches: webSearch.value ? maxWebSearches.value : null,
+            allowed_domains: webSearch.value && allowedDomains.value.length ? allowedDomains.value : null,
         });
     } catch (e) {
         messages.value.splice(local, 1);
@@ -212,6 +244,15 @@ const stream = (token, answer) => {
     const source = new EventSource(`/gw/stream?token=${encodeURIComponent(token)}`);
     sources.add(source);
     activeStreams.value = sources.size;
+
+    // Поиски модели — пузырьки над ответом; обновляем по id (ищу → ✓ / ✗)
+    source.addEventListener('search', (event) => {
+        const search = JSON.parse(event.data);
+        answer.searches ??= [];
+        const index = answer.searches.findIndex((s) => s.id === search.id);
+        if (index === -1) answer.searches.push(search);
+        else answer.searches[index] = { ...answer.searches[index], ...search, query: search.query || answer.searches[index].query };
+    });
 
     source.addEventListener('delta', (event) => {
         answer.content += JSON.parse(event.data).text;
@@ -311,23 +352,34 @@ const onKeydown = (event) => {
             </button>
         </form>
 
-        <template #panel>
-            <!-- Настройки на узких экранах открываются кнопкой -->
+        <!-- Настройки на узких экранах открываются кнопкой в верхней строке -->
+        <template #actions>
             <button
                 v-frost
                 type="button"
-                class="glass absolute top-0 right-0 z-30 rounded-2xl p-3 xl:hidden"
+                class="glass shrink-0 rounded-full p-2.5 xl:hidden"
+                :class="{ 'ring-1 ring-white/40': showSettings }"
                 title="Настройки модели"
                 @click="showSettings = !showSettings"
             >
                 <SlidersHorizontal class="size-5" :stroke-width="1.5" />
             </button>
+        </template>
 
-            <!-- Панель настроек: на широких экранах — своя колонка справа, чтобы не перекрывать ленту -->
+        <template #panel>
+            <!-- Поверх ленты (узкие экраны) — то, что под панелью, размывается; тап мимо — закрыть -->
+            <Transition enter-active-class="transition duration-200" enter-from-class="opacity-0" leave-active-class="transition duration-200" leave-to-class="opacity-0">
+                <div v-if="!isWide && showSettings" class="fixed inset-0 z-40 bg-black/30 backdrop-blur-md" @click="showSettings = false" />
+            </Transition>
+
+            <!-- Панель настроек: на широких экранах — своя колонка справа с матовостью из шейдера;
+                 на узких — всплывает под верхней строкой с настоящим размытием -->
             <section
-                v-frost
-                class="glass w-[min(24rem,calc(100vw-2rem))] shrink-0 self-start rounded-3xl p-4 xl:static xl:block"
-                :class="showSettings ? 'absolute top-16 right-0 z-20 block' : 'hidden'"
+                v-frost="isWide"
+                class="glass shrink-0 self-start rounded-3xl p-4"
+                :class="isWide
+                    ? 'w-[24rem]'
+                    : ['scrollbar-glass fixed inset-x-4 top-[4.5rem] z-50 max-h-[calc(100dvh-6rem)] overflow-y-auto md:left-auto md:w-[24rem]', showSettings ? 'block' : 'hidden']"
             >
                 <!-- Режим запроса -->
                 <div class="glass-inset grid grid-cols-3 gap-0.5 rounded-2xl p-1">
@@ -417,7 +469,44 @@ const onKeydown = (event) => {
 
                 <!-- Переключатели -->
                 <div class="space-y-3">
-                    <GlassToggle v-model="webSearch" :icon="Globe" label="Web Search" disabled title="Скоро" />
+                    <GlassToggle v-model="webSearch" :icon="Globe" label="Web Search" />
+
+                    <!-- Настройки поиска раскрываются под галочкой -->
+                    <div
+                        class="grid transition-[grid-template-rows] duration-300 ease-out"
+                        :class="webSearch ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'"
+                    >
+                        <div class="min-h-0 overflow-hidden">
+                            <div class="space-y-3 pt-1 pb-1 pl-8">
+                                <div class="flex items-center justify-between gap-3">
+                                    <span class="text-sm text-white/70">Поисков, не больше</span>
+                                    <div class="glass-inset flex rounded-xl p-0.5">
+                                        <button
+                                            v-for="limit in SEARCH_LIMITS"
+                                            :key="limit"
+                                            type="button"
+                                            class="size-7 rounded-lg text-sm transition"
+                                            :class="maxWebSearches === limit ? 'bg-white/15 text-white' : 'text-white/55 hover:text-white'"
+                                            @click="maxWebSearches = limit"
+                                        >
+                                            {{ limit }}
+                                        </button>
+                                    </div>
+                                </div>
+                                <label class="block">
+                                    <span class="text-sm text-white/70">Только с сайтов</span>
+                                    <input
+                                        v-model="domainsInput"
+                                        type="text"
+                                        placeholder="cbr.ru, wikipedia.org"
+                                        class="glass-inset mt-1.5 w-full rounded-xl px-3 py-2 text-sm outline-none placeholder:text-white/30 focus:border-cool/60"
+                                    />
+                                </label>
+                                <p v-for="hint in searchHints" :key="hint" class="text-xs leading-snug text-white/45">{{ hint }}</p>
+                            </div>
+                        </div>
+                    </div>
+
                     <GlassToggle v-model="deepThinking" :icon="Brain" label="Deep Thinking" />
                 </div>
             </section>

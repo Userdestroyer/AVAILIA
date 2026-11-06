@@ -21,8 +21,14 @@ class GatewayController extends Controller
 
         $result = $request->validate([
             'status' => ['required', 'in:done,failed'],
+            'format' => ['nullable', 'in:chat,responses,messages'],
             'content' => ['nullable', 'string'],
             'usage' => ['nullable', 'array'],
+            'web_searches' => ['nullable', 'integer', 'min:0', 'max:100'],
+            'searches' => ['nullable', 'array', 'max:50'],
+            'searches.*.id' => ['required', 'string', 'max:200'],
+            'searches.*.status' => ['required', 'in:searching,done,failed'],
+            'searches.*.query' => ['nullable', 'string', 'max:1000'],
             'error' => ['nullable', 'string'],
         ]);
 

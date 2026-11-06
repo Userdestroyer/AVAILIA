@@ -80,7 +80,32 @@ class SendMessageTest extends TestCase
     }
 
     #[Group('D1')]
-    #[TestDox('Нельзя ни открыть чужой чат, ни написать в него')]
+    #[TestDox('Веб-поиск: лимит и домены доходят до запроса к модели, домены нормализуются, лимит больше 5 не пройдёт')]
+    public function test_web_search_options_reach_the_model(): void
+    {
+        $jobs = $this->captureStreamJobs();
+        $claude = AiModel::where('slug', 'claude-haiku-5-5')->first();
+        $this->actingAs(User::factory()->create());
+
+        $this->postJson('/text/messages', ['ai_model_ids' => [$claude->id], 'content' => 'Курс?', 'web_search' => true, 'max_web_searches' => 9])
+            ->assertUnprocessable();
+
+        $this->postJson('/text/messages', [
+            'ai_model_ids' => [$claude->id],
+            'content' => 'Курс?',
+            'web_search' => true,
+            'max_web_searches' => 2,
+            'allowed_domains' => ['https://www.CBR.ru/currency', 'cbr.ru'],
+        ])->assertCreated();
+
+        $job = $jobs()[0][1];
+        $this->assertSame(['messages', '/messages'], [$job['format'], $job['path']]);
+        $this->assertSame(2, $job['body']['tools'][0]['max_uses']);
+        $this->assertSame(['www.cbr.ru', 'cbr.ru'], $job['body']['tools'][0]['allowed_domains']);
+    }
+
+    #[Group('D1')]
+    #[TestDox('Нельзя ни открыть чужой чат, ни написать в него, ни удалить')]
     public function test_foreign_chat_is_not_found(): void
     {
         $chat = Chat::create(['user_id' => User::factory()->create()->id]);
@@ -90,7 +115,20 @@ class SendMessageTest extends TestCase
         $this->get("/text/{$chat->id}")->assertNotFound();
         $this->postJson('/text/messages', ['chat_id' => $chat->id, 'ai_model_ids' => [$model->id], 'content' => 'Привет'])
             ->assertNotFound();
+        $this->deleteJson("/text/{$chat->id}")->assertNotFound();
         $this->assertSame(0, $chat->messages()->count());
+        $this->assertNotSoftDeleted($chat);
+    }
+
+    #[Group('D2')]
+    public function test_own_chat_is_soft_deleted_and_hidden(): void
+    {
+        $chat = ($user = User::factory()->create())->chats()->create(['title' => 'Старый']);
+
+        $this->actingAs($user)->deleteJson("/text/{$chat->id}")->assertNoContent();
+
+        $this->assertSoftDeleted($chat);
+        $this->get("/text/{$chat->id}")->assertNotFound();
     }
 
     #[Group('D1')]

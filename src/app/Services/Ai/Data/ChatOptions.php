@@ -10,5 +10,9 @@ final readonly class ChatOptions
         public ?int $maxTokens = null,
         public ?ReasoningEffort $reasoningEffort = null,
         public bool $webSearch = false,
+        // Не больше стольких поисков за ответ (там, где модель это соблюдает)
+        public ?int $maxWebSearches = null,
+        /** @var list<string> Искать только на этих сайтах (там, где поддерживается) */
+        public array $allowedDomains = [],
     ) {}
 }

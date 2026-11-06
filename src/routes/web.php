@@ -16,6 +16,7 @@ Route::middleware('guest')->group(function () {
 Route::middleware('auth')->group(function () {
     Route::get('/text', [TextController::class, 'index'])->name('text');
     Route::get('/text/{chat}', [TextController::class, 'show'])->name('text.chat');
+    Route::delete('/text/{chat}', [TextController::class, 'destroy'])->name('text.chat.destroy');
     Route::post('/text/messages', [MessageController::class, 'store'])->name('text.messages');
     // Режимы — пока заглушки; переключение без перезагрузки страницы (Inertia)
     Route::inertia('/images', 'Mode/Placeholder', ['mode' => 'images'])->name('images');

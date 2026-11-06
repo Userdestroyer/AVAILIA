@@ -37,6 +37,9 @@ class MessageController extends Controller
             new ChatOptions(
                 maxTokens: $request->input('max_tokens'),
                 reasoningEffort: $request->enum('reasoning_effort', ReasoningEffort::class),
+                webSearch: $request->boolean('web_search'),
+                maxWebSearches: $request->input('max_web_searches'),
+                allowedDomains: $request->input('allowed_domains') ?? [],
             ),
         );
 

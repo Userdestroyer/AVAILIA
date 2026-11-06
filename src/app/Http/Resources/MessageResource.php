@@ -30,6 +30,8 @@ class MessageResource extends JsonResource
                 'vendor' => $this->aiModel->vendor->slug,
             ] : null,
             'cost' => $isAnswer && $this->status === MessageStatus::Done ? $this->cost() : null,
+            // Поиски модели — пузырьки над ответом
+            'searches' => $isAnswer ? ($this->search_log ?? []) : [],
         ];
     }
 

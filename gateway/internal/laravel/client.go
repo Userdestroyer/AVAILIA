@@ -13,9 +13,13 @@ import (
 // Result — итог стрима, который сохраняет Laravel (и считает по нему стоимость).
 type Result struct {
 	Status  string          `json:"status"` // "done" | "failed"
+	Format  string          `json:"format,omitempty"`
 	Content string          `json:"content"`
 	Usage   json.RawMessage `json:"usage,omitempty"`
-	Error   string          `json:"error,omitempty"`
+	// Сколько поисков оплачено и их журнал (для пузырьков после перезагрузки)
+	WebSearches int    `json:"web_searches"`
+	Searches    any    `json:"searches,omitempty"`
+	Error       string `json:"error,omitempty"`
 }
 
 type Client struct {
