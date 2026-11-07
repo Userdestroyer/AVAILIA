@@ -2,7 +2,7 @@
 
 namespace App\Services\Ai;
 
-use App\Models\AiModel;
+use App\Models\ProviderModel;
 use App\Services\Ai\Data\ChatRequest;
 
 /**
@@ -10,11 +10,6 @@ use App\Services\Ai\Data\ChatRequest;
  */
 class ProxyApiProvider extends AiProvider
 {
-    // Где префикс вендора у proxyapi отличается от нашего slug
-    private const VENDOR_PREFIXES = [
-        'xai' => 'x-ai',
-    ];
-
     /**
      * Поиск в интернете у proxyapi (проверено запросами, 2026-11-07): в chat/completions его нет.
      * Claude — родной Messages: только там соблюдаются max_uses и allowed_domains
@@ -33,20 +28,8 @@ class ProxyApiProvider extends AiProvider
         return 'proxyapi';
     }
 
-    public function webSearch(AiModel $model): ?array
+    public function webSearch(ProviderModel $offer): ?array
     {
-        return self::WEB_SEARCH[$model->vendor->slug] ?? null;
-    }
-
-    public function webSearchPrice(AiModel $model): string
-    {
-        return (string) (config('ai.providers.proxyapi.web_search_prices')[$model->vendor->slug] ?? 0);
-    }
-
-    public function modelId(AiModel $model): string
-    {
-        $vendor = $model->vendor->slug;
-
-        return (self::VENDOR_PREFIXES[$vendor] ?? $vendor).'/'.$model->slug;
+        return self::WEB_SEARCH[$offer->aiModel->vendor->slug] ?? null;
     }
 }

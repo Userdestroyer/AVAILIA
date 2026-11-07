@@ -42,6 +42,22 @@ func TestRead(t *testing.T) {
 			kinds:   "reasoning delta delta",
 		},
 		{
+			name:   "chat: поиск Polza — события tool_call/tool_result, число поисков и стоимость в usage",
+			format: FormatChat,
+			input: ": polza-progress {\"phase\":\"server_tool\"}\n\n" + sse(
+				`{"choices":[{"delta":{},"finish_reason":null}],"polza":{"event":"tool_call","id":"call_1","type":"polza:web_search","arguments":{"query":"курс доллара ЦБ"}}}`,
+				`{"choices":[{"delta":{},"finish_reason":null}],"polza":{"event":"tool_result","id":"call_1","type":"polza:web_search","status":"completed","summary":{"query":"курс доллара ЦБ"}}}`,
+				`{"choices":[{"delta":{"content":"81,79 ₽"}}]}`,
+				`{"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":27,"completion_tokens":91,"server_tool_use":{"web_search_requests":1},"cost_rub":0.51955},"polza":{"event":"final"}}`,
+				`[DONE]`,
+			),
+			content:     "81,79 ₽",
+			usage:       map[string]float64{"cost_rub": 0.51955},
+			searches:    []Search{{ID: "call_1", Status: "done", Query: "курс доллара ЦБ"}},
+			webSearches: 1,
+			kinds:       "search search delta",
+		},
+		{
 			name:   "chat: ошибка провайдера посреди стрима",
 			format: FormatChat,
 			input: sse(

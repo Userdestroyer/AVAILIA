@@ -2,7 +2,7 @@
 
 return [
 
-    // Активный агрегатор: proxyapi (позже — poiza)
+    // Провайдер по умолчанию, пока в админке не выбран другой (app_settings: ai.provider)
     'provider' => env('AI_PROVIDER', 'proxyapi'),
 
     // Go-гейтвей стримит ответы: забирает задание из Redis по одноразовому токену
@@ -16,12 +16,10 @@ return [
         'proxyapi' => [
             'url' => env('PROXY_API_URL', 'https://api.proxyapi.ru/v1'),
             'key' => env('PROXY_API_KEY'),
-            // Цена одного поиска в интернете, ₽ (proxyapi.ru/docs/web-search) — по слагу вендора
-            'web_search_prices' => [
-                'anthropic' => 1,
-                'openai' => 1,
-                'google' => 1.5,
-            ],
+        ],
+        'polza' => [
+            'url' => env('POLZA_API_URL', 'https://polza.ai/api/v1'),
+            'key' => env('POLZA_API_KEY'),
         ],
     ],
 

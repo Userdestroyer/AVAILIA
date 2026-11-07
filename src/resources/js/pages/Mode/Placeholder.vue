@@ -1,6 +1,6 @@
 <script setup>
 import { Head } from '@inertiajs/vue3';
-import { AudioLines, Image, Shield, Video } from 'lucide-vue-next';
+import { AudioLines, Image, Video } from 'lucide-vue-next';
 import AppLayout from '@/layouts/AppLayout.vue';
 import ModeShell from '@/components/ModeShell.vue';
 
@@ -14,7 +14,6 @@ const MODES = {
     images: { title: 'Изображения', icon: Image, text: 'Генерация и редактирование картинок' },
     video: { title: 'Видео', icon: Video, text: 'Генерация видео по тексту и картинке' },
     audio: { title: 'Аудио', icon: AudioLines, text: 'Озвучка, распознавание и музыка' },
-    admin: { title: 'Админ', icon: Shield, text: 'Пользователи, тарифы, модели и цены' },
 };
 </script>
 

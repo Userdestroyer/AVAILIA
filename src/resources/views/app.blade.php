@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 @php
-    // Тема известна до первого кадра — без вспышки светлой темы при загрузке
+    // Тема известна до первого кадра — без вспышки: выбранная в аккаунте, иначе в этом браузере (кука)
     $theme = auth()->user()?->interfaceSettings()['theme'] ?? request()->cookie('theme');
     $theme = in_array($theme, ['light', 'dark'], true) ? $theme : 'light';
 @endphp

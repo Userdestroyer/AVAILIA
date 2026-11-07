@@ -40,18 +40,19 @@ class User extends Authenticatable
     }
 
     /**
-     * Настройки интерфейса с дефолтами — фронт всегда получает полный набор.
+     * Настройки интерфейса. null — не выбирали: тема тогда берётся из куки браузера
+     * (а не «светлая по умолчанию», которая перебивала выбранную в этом браузере),
+     * настройки чата — дефолты фронта.
      *
-     * @return array{theme: string}
+     * @return array{theme: ?string, chat: ?array}
      */
     public function interfaceSettings(): array
     {
-        return [...self::DEFAULT_SETTINGS, ...($this->settings ?? [])];
+        return [
+            'theme' => $this->settings['theme'] ?? null,
+            'chat' => $this->settings['chat'] ?? null,
+        ];
     }
-
-    public const DEFAULT_SETTINGS = [
-        'theme' => 'light',
-    ];
 
     public function plan(): BelongsTo
     {
@@ -73,7 +74,9 @@ class User extends Authenticatable
      */
     public function requestsToday(): int
     {
+        // С удалёнными: иначе, удаляя ответы, можно было бы обнулять лимит
         return $this->messages()
+            ->withTrashed()
             ->where('messages.role', MessageRole::Assistant)
             ->where('messages.created_at', '>=', today())
             ->count();

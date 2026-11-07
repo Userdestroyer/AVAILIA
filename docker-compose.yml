@@ -1,5 +1,10 @@
 networks:
   availia:
+    # Подсеть закреплена: автоматическую Docker выдал из 172.19.0.0/16, а VPN (tun0) поднимает
+    # туннель в том же диапазоне и уводит туда трафик к контейнерам — сайт с хоста пропадал
+    ipam:
+      config:
+        - subnet: 10.88.0.0/24
 
 volumes:
   postgres_data:
@@ -65,6 +70,8 @@ services:
       REDIS_PASSWORD: ${REDIS_PASSWORD}
       PROXY_API_URL: ${PROXY_API_URL:-https://api.proxyapi.ru/v1}
       PROXY_API_KEY: ${PROXY_API_KEY:-}
+      POLZA_API_URL: ${POLZA_API_URL:-https://polza.ai/api/v1}
+      POLZA_API_KEY: ${POLZA_API_KEY:-}
       REDIS_DB: "2"
       GATEWAY_SECRET: ${GATEWAY_SECRET:?error}
       # Сюда гейтвей отчитывается о готовом ответе

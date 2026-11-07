@@ -7,6 +7,9 @@ use App\Enums\MessageStatus;
 use App\Models\AiModel;
 use App\Models\Chat;
 use App\Models\Plan;
+use App\Models\Provider;
+use App\Models\ProviderModel;
+use App\Services\Ai\ProviderRegistry;
 use App\Models\User;
 use Database\Seeders\DatabaseSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -52,7 +55,7 @@ class SendMessageTest extends TestCase
     }
 
     #[Group('D1')]
-    #[TestDox('Мульти-запрос: каждой модели свой ответ и стрим, в истории каждая видит свой прошлый ответ')]
+    #[TestDox('Мульти-запрос: каждой модели свой ответ и стрим, в истории каждая видит свой прошлый ответ; температура — только тем, кто её принимает')]
     public function test_multi_request_gives_each_model_its_own_history(): void
     {
         $jobs = $this->captureStreamJobs();
@@ -69,25 +72,28 @@ class SendMessageTest extends TestCase
         }
 
         $this->actingAs($user)
-            ->postJson('/text/messages', ['chat_id' => $chat->id, 'ai_model_ids' => [$gemini->id, $claude->id], 'content' => 'Ещё'])
+            ->postJson('/text/messages', ['chat_id' => $chat->id, 'ai_model_ids' => [$gemini->id, $claude->id], 'content' => 'Ещё', 'temperature' => 0.4])
             ->assertCreated()
             ->assertJsonCount(2, 'answers');
 
-        $sent = collect($jobs())->mapWithKeys(fn ($job) => [$job[1]['body']['model'] => array_column($job[1]['body']['messages'], 'content')]);
-        $this->assertSame(['Вопрос', 'от Gemini', 'Ещё'], $sent['google/gemini-4-argon']);
-        $this->assertSame(['Вопрос', 'от Claude', 'Ещё'], $sent['anthropic/claude-haiku-5-5']);
+        $bodies = collect($jobs())->mapWithKeys(fn ($job) => [$job[1]['body']['model'] => $job[1]['body']]);
+        $this->assertSame(['Вопрос', 'от Gemini', 'Ещё'], array_column($bodies['google/gemini-4-argon']['messages'], 'content'));
+        $this->assertSame(['Вопрос', 'от Claude', 'Ещё'], array_column($bodies['anthropic/claude-haiku-5-5']['messages'], 'content'));
+        // Gemini температуру принимает, Claude — нет: ему она не уходит, запрос не падает
+        $this->assertSame(0.4, $bodies['google/gemini-4-argon']['temperature']);
+        $this->assertArrayNotHasKey('temperature', $bodies['anthropic/claude-haiku-5-5']);
         $this->assertSame(2, $chat->messages()->where('parent_id', '!=', $question->id)->whereNotNull('parent_id')->count());
     }
 
     #[Group('D1')]
-    #[TestDox('Веб-поиск: лимит и домены доходят до запроса к модели, домены нормализуются, лимит больше 5 не пройдёт')]
+    #[TestDox('Веб-поиск: лимит и домены доходят до запроса к модели, домены нормализуются, лимит больше 20 не пройдёт')]
     public function test_web_search_options_reach_the_model(): void
     {
         $jobs = $this->captureStreamJobs();
         $claude = AiModel::where('slug', 'claude-haiku-5-5')->first();
         $this->actingAs(User::factory()->create());
 
-        $this->postJson('/text/messages', ['ai_model_ids' => [$claude->id], 'content' => 'Курс?', 'web_search' => true, 'max_web_searches' => 9])
+        $this->postJson('/text/messages', ['ai_model_ids' => [$claude->id], 'content' => 'Курс?', 'web_search' => true, 'max_web_searches' => 21])
             ->assertUnprocessable();
 
         $this->postJson('/text/messages', [
@@ -102,6 +108,25 @@ class SendMessageTest extends TestCase
         $this->assertSame(['messages', '/messages'], [$job['format'], $job['path']]);
         $this->assertSame(2, $job['body']['tools'][0]['max_uses']);
         $this->assertSame(['www.cbr.ru', 'cbr.ru'], $job['body']['tools'][0]['allowed_domains']);
+    }
+
+    #[Group('D1')]
+    #[TestDox('Запрос уходит через активного провайдера с его id модели; отключённую у него модель не отправить')]
+    public function test_request_goes_through_active_provider(): void
+    {
+        $jobs = $this->captureStreamJobs();
+        $haiku = AiModel::where('slug', 'claude-haiku-5-5')->first();
+        $polza = Provider::where('slug', 'polza')->first();
+        app(ProviderRegistry::class)->activate($polza);
+        $this->actingAs(User::factory()->create());
+
+        $this->postJson('/text/messages', ['ai_model_ids' => [$haiku->id], 'content' => 'Привет'])->assertCreated();
+        [$key, $job] = $jobs()[0];
+        $this->assertSame(['polza', 'anthropic/claude-haiku-5.5'], [$job['provider'], $job['body']['model']]);
+        $this->assertSame($polza->id, $haiku->fresh()->offerings()->where('provider_id', $polza->id)->value('provider_id'));
+
+        ProviderModel::where('provider_id', $polza->id)->where('ai_model_id', $haiku->id)->update(['is_active' => false]);
+        $this->postJson('/text/messages', ['ai_model_ids' => [$haiku->id], 'content' => 'Ещё'])->assertUnprocessable();
     }
 
     #[Group('D1')]
@@ -146,6 +171,48 @@ class SendMessageTest extends TestCase
         $this->actingAs($user)
             ->postJson('/text/messages', ['chat_id' => $chat->id, 'ai_model_ids' => AiModel::limit(2)->pluck('id')->all(), 'content' => 'Ещё'])
             ->assertTooManyRequests();
+    }
+
+    #[Group('D1')]
+    #[TestDox('Удалённые ответы остаются в дневном лимите; чужое сообщение и пишущийся ответ удалить нельзя')]
+    public function test_deleting_messages_keeps_limits_and_ownership(): void
+    {
+        $user = User::factory()->create(['plan_id' => Plan::where('code', 'pro')->value('id')]);
+        $user->plan->update(['daily_request_limit' => 1]);
+        $chat = $user->chats()->create();
+        $question = $chat->messages()->create(['role' => MessageRole::User, 'content' => 'Вопрос']);
+        $answer = $chat->messages()->create(['parent_id' => $question->id, 'role' => MessageRole::Assistant, 'status' => MessageStatus::Done]);
+        $streaming = $chat->messages()->create(['role' => MessageRole::Assistant, 'status' => MessageStatus::Streaming]);
+
+        $this->actingAs(User::factory()->create())->deleteJson("/text/messages/{$answer->id}")->assertNotFound();
+
+        $this->actingAs($user);
+        $this->deleteJson("/text/messages/{$streaming->id}")->assertConflict();
+        $this->deleteJson("/text/messages/{$answer->id}")->assertNoContent();
+        $this->assertSoftDeleted($answer);
+
+        // Удалили ответ — а лимит на сегодня всё равно исчерпан
+        Redis::shouldReceive('connection')->never();
+        $this->postJson('/text/messages', ['chat_id' => $chat->id, 'ai_model_ids' => [AiModel::first()->id], 'content' => 'Ещё'])
+            ->assertTooManyRequests();
+    }
+
+    #[Group('D2')]
+    public function test_deleted_question_and_its_answers_leave_model_history(): void
+    {
+        $jobs = $this->captureStreamJobs();
+        $model = AiModel::where('slug', 'claude-haiku-5-5')->first();
+        $user = User::factory()->create();
+        $chat = $user->chats()->create();
+        $question = $chat->messages()->create(['role' => MessageRole::User, 'content' => 'Забудь это']);
+        $answer = $chat->messages()->create(['parent_id' => $question->id, 'role' => MessageRole::Assistant, 'status' => MessageStatus::Done, 'ai_model_id' => $model->id, 'content' => 'Ок']);
+        $this->actingAs($user);
+
+        $this->deleteJson("/text/messages/{$question->id}")->assertNoContent();
+        $this->assertSoftDeleted($answer);
+
+        $this->postJson('/text/messages', ['chat_id' => $chat->id, 'ai_model_ids' => [$model->id], 'content' => 'Новое'])->assertCreated();
+        $this->assertSame([['role' => 'user', 'content' => 'Новое']], $jobs()[0][1]['body']['messages']);
     }
 
     /**

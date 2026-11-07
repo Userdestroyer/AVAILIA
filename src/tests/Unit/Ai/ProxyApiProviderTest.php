@@ -2,9 +2,13 @@
 
 namespace Tests\Unit\Ai;
 
+use App\Enums\Capability;
 use App\Enums\MessageRole;
+use App\Enums\ReasoningEffort;
 use App\Models\AiModel;
 use App\Models\Message;
+use App\Models\ProviderModel;
+use App\Models\ProviderModelCapability;
 use App\Models\Vendor;
 use App\Services\Ai\Data\ChatOptions;
 use App\Services\Ai\ProxyApiProvider;
@@ -15,21 +19,6 @@ use PHPUnit\Framework\TestCase;
 
 class ProxyApiProviderTest extends TestCase
 {
-    public static function modelIds(): array
-    {
-        return [
-            'префикс совпадает со slug' => ['anthropic', 'claude-opus-5-5', 'anthropic/claude-opus-5-5'],
-            'у xAI префикс x-ai' => ['xai', 'grok-4.7', 'x-ai/grok-4.7'],
-        ];
-    }
-
-    #[Group('U2')]
-    #[DataProvider('modelIds')]
-    public function test_model_id_has_vendor_prefix(string $vendor, string $slug, string $expected): void
-    {
-        $this->assertSame($expected, $this->provider()->modelId($this->model($vendor, $slug)));
-    }
-
     public static function searchRequests(): array
     {
         return [
@@ -53,14 +42,47 @@ class ProxyApiProviderTest extends TestCase
     public function test_request_uses_format_with_web_search(string $vendor, bool $search, string $format, string $path, ?array $tools): void
     {
         $request = $this->provider()->request(
-            $this->model($vendor, 'model'),
+            $this->offer($vendor, 'vendor/model-at-proxyapi'),
             [new Message(['role' => MessageRole::User, 'content' => 'Курс?'])],
             new ChatOptions(maxTokens: 2048, webSearch: $search, maxWebSearches: 3, allowedDomains: ['cbr.ru']),
         );
 
         $this->assertSame([$format, $path], [$request->format, $request->path]);
+        $this->assertSame('vendor/model-at-proxyapi', $request->body['model']);
         $this->assertSame($tools, $request->body['tools'] ?? null);
         $this->assertTrue($request->body['stream']);
+    }
+
+    public static function capabilityRequests(): array
+    {
+        $all = ['temperature' => ['max' => 1.5], 'reasoning' => null];
+
+        return [
+            // Температура зажимается в пределы модели, лимит ответа — в её максимум
+            'chat, умеет всё' => ['xai', false, $all, ['temperature' => 1.5, 'reasoning_effort' => 'high', 'max_tokens' => 1024]],
+            'chat, ничего не умеет' => ['xai', false, [], ['temperature' => null, 'reasoning_effort' => null, 'max_tokens' => 1024]],
+            'Responses (Gemini с поиском)' => ['google', true, $all, ['temperature' => 1.5, 'reasoning' => ['effort' => 'high'], 'max_output_tokens' => 1024]],
+            'Messages (Claude с поиском)' => ['anthropic', true, ['temperature' => ['max' => 1]], ['temperature' => 1.0, 'max_tokens' => 1024]],
+        ];
+    }
+
+    #[Group('U1')]
+    #[DataProvider('capabilityRequests')]
+    #[TestDox('Параметр уходит только модели, которая его принимает, и в её пределах — в любом формате запроса')]
+    public function test_parameters_follow_model_capabilities(string $vendor, bool $search, array $capabilities, array $expected): void
+    {
+        $offer = $this->offer($vendor, 'vendor/model', $capabilities);
+        $offer->max_output_tokens = 1024;
+
+        $body = $this->provider()->request(
+            $offer,
+            [new Message(['role' => MessageRole::User, 'content' => 'Привет'])],
+            new ChatOptions(maxTokens: 4096, reasoningEffort: ReasoningEffort::High, temperature: 1.8, webSearch: $search),
+        )->body;
+
+        foreach ($expected as $key => $value) {
+            $this->assertSame($value, $body[$key] ?? null, $key);
+        }
     }
 
     public static function usages(): array
@@ -84,9 +106,17 @@ class ProxyApiProviderTest extends TestCase
         $this->assertSame($expected, [$usage->input, $usage->output, $usage->cacheRead, $usage->cacheWrite]);
     }
 
-    private function model(string $vendor, string $slug): AiModel
+    /**
+     * @param  array<string, array<string, mixed>|null>  $capabilities  capability => settings
+     */
+    private function offer(string $vendor, string $externalId, array $capabilities = []): ProviderModel
     {
-        return (new AiModel(['slug' => $slug]))->setRelation('vendor', new Vendor(['slug' => $vendor]));
+        $model = (new AiModel(['slug' => 'model']))->setRelation('vendor', new Vendor(['slug' => $vendor]));
+        $rows = collect($capabilities)->map(fn ($settings, $capability) => new ProviderModelCapability([
+            'capability' => Capability::from($capability), 'settings' => $settings,
+        ]))->values();
+
+        return (new ProviderModel(['external_id' => $externalId]))->setRelation('aiModel', $model)->setRelation('capabilities', $rows);
     }
 
     private function provider(): ProxyApiProvider

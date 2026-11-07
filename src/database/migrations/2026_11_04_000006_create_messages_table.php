@@ -21,10 +21,10 @@ return new class extends Migration
             $table->unsignedInteger('output_tokens')->default(0);
             $table->unsignedInteger('cache_read_tokens')->default(0);
             $table->unsignedInteger('cache_write_tokens')->default(0);
-            // Себестоимость по ценам модели на момент ответа, в валюте цен модели.
-            // В валюту юзера переводится при показе — по курсу на дату сообщения.
-            $table->decimal('cost', 16, 8)->default(0);
-            $table->char('cost_currency', 3)->default('USD');
+            // Себестоимость на момент ответа: от провайдера (если сообщил) или по расценкам.
+            // null — неизвестна (у модели нет расценок). В валюту юзера — по курсу на дату сообщения.
+            $table->decimal('cost', 16, 8)->nullable();
+            $table->char('cost_currency', 3)->default('RUB');
             $table->timestamps();
 
             $table->index(['chat_id', 'id']);

@@ -63,7 +63,9 @@ services:
       REDIS_PASSWORD: ${REDIS_PASSWORD:?error}
       REDIS_DB: "2"
       PROXY_API_URL: ${PROXY_API_URL:-https://api.proxyapi.ru/v1}
-      PROXY_API_KEY: ${PROXY_API_KEY:?error}
+      PROXY_API_KEY: ${PROXY_API_KEY:-}
+      POLZA_API_URL: ${POLZA_API_URL:-https://polza.ai/api/v1}
+      POLZA_API_KEY: ${POLZA_API_KEY:-}
       GATEWAY_SECRET: ${GATEWAY_SECRET:?error}
       LARAVEL_URL: "http://nginx"
     depends_on:

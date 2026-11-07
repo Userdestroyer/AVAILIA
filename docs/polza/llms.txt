@@ -1,0 +1,123 @@
+# Polza.ai
+
+- [Добро пожаловать](https://polza.ai/docs/index.md): Унифицированный API для сотен нейросетей
+- [Быстрый старт](https://polza.ai/docs/glavnoe/quickstart.md): Начните работу за несколько минут
+- [Наши принципы](https://polza.ai/docs/glavnoe/principles.md): Философия и ключевые преимущества
+- [Часто задаваемые вопросы](https://polza.ai/docs/glavnoe/faq.md): Ответы на популярные вопросы о Polza.ai
+- [Для бизнеса](https://polza.ai/docs/glavnoe/enterprise.md): Enterprise-решения для корпоративных клиентов
+- [Поддержка](https://polza.ai/docs/glavnoe/support.md): Как получить помощь и решить проблемы с Polza.ai
+- [Для провайдеров](https://polza.ai/docs/glavnoe/providers.md): Как стать провайдером моделей на платформе
+- [Конфиденциальность](https://polza.ai/docs/osobennosti/privacy.md): Как мы обрабатываем и защищаем ваши данные
+- [Начало работы](https://polza.ai/docs/gaidy/getting-started.md): Регистрация, получение API ключа и первые шаги с Polza.ai
+- [Получение списка моделей](https://polza.ai/docs/gaidy/models.md): Как получить и фильтровать список доступных AI моделей через API
+- [Текстовые запросы](https://polza.ai/docs/gaidy/chat-completions.md): Отправка запросов к текстовым моделям через Chat Completions API
+- [Передача медиа на вход](https://polza.ai/docs/gaidy/media-input.md): Как передавать изображения, документы, аудио и видео в запросах к AI моделям
+- [Выбор провайдера](https://polza.ai/docs/gaidy/provider-selection.md): Как выбирать и переключаться между провайдерами моделей
+- [Неофициальные провайдеры](https://polza.ai/docs/gaidy/unofficial-providers.md): Что такое неофициальные провайдеры моделей, какие у них риски и как их включить
+- [Вызов функций (Tool Calling)](https://polza.ai/docs/gaidy/tool-calling.md): Как использовать функции и инструменты в запросах к AI моделям
+- [Структурный вывод](https://polza.ai/docs/gaidy/structured-output.md): Получение структурированных данных (JSON) от AI моделей
+- [Плагины](https://polza.ai/docs/gaidy/plugins.md): Расширение возможностей моделей с помощью плагинов
+- [Поиск в интернете](https://polza.ai/docs/gaidy/web-search.md): Как добавить веб-поиск к любой AI модели
+- [Серверные инструменты](https://polza.ai/docs/gaidy/server-tools.md): Поиск в интернете, чтение страниц и другие инструменты, которые Polza выполняет сама внутри одного запроса
+- [Reasoning Tokens](https://polza.ai/docs/osobennosti/reasoning-tokens.md): Токены рассуждений для улучшения качества ответов
+- [Кеширование запросов](https://polza.ai/docs/osobennosti/caching.md): Снижение расходов с помощью кеширования промптов
+- [Учет средств (Usage)](https://polza.ai/docs/osobennosti/usage.md): Отслеживание использования токенов и стоимости
+- [OAuth PKCE](https://polza.ai/docs/gaidy/oauth-pkce.md): Авторизация пользователей и получение API-ключей через OAuth 2.0 PKCE flow
+- [MCP-сервер](https://polza.ai/docs/gaidy/mcp.md): Подключение AI-агентов к аккаунту Polza.AI через Model Context Protocol
+- [Алиасы параметров](https://polza.ai/docs/osobennosti/aliases.md): Как передавать provider, reasoning_effort и allow_fallbacks прямо в строке model
+- [Jev: решения вместо текста](https://polza.ai/docs/gaidy/jev.md): Модель, которая не пишет ответы, а принимает решения — да или нет, выбор из вариантов, оценка по шкале — и возвращает вероятности
+- [Как задавать вопросы Jev](https://polza.ai/docs/gaidy/jev-questions.md): Три типа вопросов — noul, choice, score, — структура state и приёмы, от которых зависит качество ответов
+- [Jev: рецепты и ограничения](https://polza.ai/docs/gaidy/jev-recipes.md): Готовые схемы — разбор обращений, маршрутизация, составная оценка, защита LLM, фильтр контекста, извлечение значений — и то, чего модель не умеет
+- [Gemini Omni 1.1 Flash](https://polza.ai/docs/gaidy/gemini-omni-1-1-flash.md): Генерация видео моделью Gemini Omni 1.1 Flash от Google — лёгкая версия линейки Gemini Omni
+- [Gemini Omni Video](https://polza.ai/docs/gaidy/gemini-omni-video.md): Генерация видео с моделью Gemini Omni Video от Google
+- [Seedance 1.5 Pro](https://polza.ai/docs/gaidy/seedance-1-5-pro.md): Генерация видео с моделью Seedance 1.5 Pro от ByteDance
+- [Seedance 2](https://polza.ai/docs/gaidy/seedance-2.md): Генерация видео с моделями Seedance 2, Seedance 2 Fast и Seedance 2 Mini от ByteDance
+- [Kling 3.0](https://polza.ai/docs/gaidy/kling-3.md): Генерация видео с моделью Kling 3.0
+- [Kling 3.0 Motion Control](https://polza.ai/docs/gaidy/kling-3-motion-control.md): Перенос движения из видео на персонажа с изображения — Kling 3.0 Motion Control
+- [Kling 2.6 Motion Control](https://polza.ai/docs/gaidy/kling-2-6-motion-control.md): Перенос движения из видео на персонажа с изображения — Kling 2.6 Motion Control
+- [Kling 2.5 Turbo](https://polza.ai/docs/gaidy/kling-2-5-turbo.md): Генерация видео с моделью Kling 2.5 Turbo
+- [Wan 2.6](https://polza.ai/docs/gaidy/wan-2-6.md): Генерация видео с моделью Wan 2.6
+- [Wan 2.5](https://polza.ai/docs/gaidy/wan-2-5.md): Генерация видео с моделью Wan 2.5
+- [Veo 3.1](https://polza.ai/docs/gaidy/veo-3-1.md): Генерация видео с моделью Veo 3.1 от Google
+- [Topaz Upscale](https://polza.ai/docs/gaidy/topaz-upscale.md): Апскейл изображений с моделью Topaz Upscale
+- [Seedream 5.0 Lite](https://polza.ai/docs/gaidy/seedream-5-lite.md): Генерация и редактирование изображений с моделью Seedream 5.0 Lite
+- [Seedream 4.5](https://polza.ai/docs/gaidy/seedream-4-5.md): Генерация изображений с моделью Seedream 4.5
+- [Seedream 4](https://polza.ai/docs/gaidy/seedream-4.md): Генерация изображений с моделью Seedream 4 от ByteDance
+- [Seedream 3.0](https://polza.ai/docs/gaidy/seedream-3.md): Генерация изображений с моделью Seedream 3.0 от ByteDance
+- [Flux-2 Pro](https://polza.ai/docs/gaidy/flux-2-pro.md): Генерация изображений с моделью Flux-2 Pro
+- [Flux-2 Flex](https://polza.ai/docs/gaidy/flux-2-flex.md): Генерация изображений с моделью Flux-2 Flex
+- [Grok Image](https://polza.ai/docs/gaidy/grok-imagine.md): Генерация изображений с моделью Grok Imagine
+- [Qwen Image](https://polza.ai/docs/gaidy/qwen-image.md): Генерация и редактирование изображений с Qwen Image
+- [Qwen Image 2](https://polza.ai/docs/gaidy/qwen-image-2.md): Генерация и редактирование изображений с Qwen Image 2 — нативный 2K выход и рендеринг текста
+- [Qwen Image 2.1](https://polza.ai/docs/gaidy/qwen-image-2.1.md): Генерация и редактирование изображений с Qwen Image 2.1 — 1K/2K, прозрачный фон, до 10 референсов
+- [GPT Image 1.5](https://polza.ai/docs/gaidy/gpt-image-1-5.md): Генерация и редактирование изображений с GPT Image 1.5
+- [OpenAI GPT-5 Image Mini](https://polza.ai/docs/gaidy/gpt-5-image-mini.md): Генерация изображений с моделью OpenAI GPT-5 Image Mini
+- [OpenAI GPT-5 Image](https://polza.ai/docs/gaidy/gpt-5-image.md): Генерация изображений с моделью OpenAI GPT-5 Image
+- [OpenAI GPT-5.4 Image 2](https://polza.ai/docs/gaidy/gpt-5-4-image-2.md): Генерация и редактирование изображений с моделью OpenAI GPT-5.4 Image 2
+- [Nano Banana](https://polza.ai/docs/gaidy/nanobanano.md): Генерация изображений с моделью Nano Banana
+- [Nano Banana Pro](https://polza.ai/docs/gaidy/nanobanano-pro.md): Продвинутая генерация изображений с Nano Banana Pro
+- [Nano Banana 2](https://polza.ai/docs/gaidy/nanobanano-2.md): Генерация изображений до 4K — полный API-гайд
+- [Aiesa Транскрипция](https://polza.ai/docs/gaidy/aiesa-transcribe.md): Асинхронная расшифровка аудио с диаризацией и LLM-анализом
+- [Suno Music Generate](https://polza.ai/docs/gaidy/suno-music.md): Генерация музыки с моделью Suno
+- [Suno Sounds](https://polza.ai/docs/gaidy/suno-sounds.md): Генерация звуковых эффектов, сэмплов и атмосферных аудиофрагментов с моделью Suno
+- [Suno Mashup](https://polza.ai/docs/gaidy/suno-mashup.md): Объединение двух песен в новый мэшап-трек с моделью Suno
+- [Google Lyria 3](https://polza.ai/docs/gaidy/google-lyria-3.md): Генерация музыки с моделями Google Lyria 3 (Pro и Clip)
+- [Claude Code](https://polza.ai/docs/integracii/claude-code.md): Подключение Claude Code к Polza.AI — полноценный AI-ассистент для разработчиков с отслеживанием расходов
+- [Claude Desktop](https://polza.ai/docs/integracii/claude-desktop.md): Подключение десктопного приложения Anthropic к Polza.AI — Claude Opus, Sonnet и Haiku через единый API-ключ
+- [Cline (VS Code / Cursor)](https://polza.ai/docs/integracii/cline.md): Интеграция Polza.ai с Cline - AI-ассистент для VS Code и Cursor
+- [Cline Desktop](https://polza.ai/docs/integracii/cline-desktop.md): Подключение десктопного приложения Cline к Polza.ai через OpenAI Compatible API
+- [Codex CLI](https://polza.ai/docs/integracii/codex.md): Подключение OpenAI Codex CLI к Polza.ai
+- [ChatGPT Desktop](https://polza.ai/docs/integracii/chatgpt-desktop.md): Подключение десктопного приложения ChatGPT (Windows, macOS и Linux) к Polza.ai через конфиг Polza-провайдера
+- [Cherry Studio](https://polza.ai/docs/integracii/cherry-studio.md): Подключение Cherry Studio к Polza.ai
+- [DeepSeek Harness](https://polza.ai/docs/integracii/deepseek-harness.md): Подключение DeepSeek Harness к Polza.ai через OpenAI-совместимый API
+- [Dify](https://polza.ai/docs/integracii/dify.md): Подключите модели Polza.ai к Dify — платформе для создания AI-агентов и автоматизации рабочих процессов.
+- [Gemini CLI](https://polza.ai/docs/integracii/gemini-cli.md): Подключение Gemini CLI к Polza.ai для использования любых моделей через интерфейс командной строки Google
+- [Hermes Agent](https://polza.ai/docs/integracii/hermes-agent.md): Самообучающийся AI-агент с поддержкой Telegram, памятью и планировщиком задач
+- [Hermes Desktop](https://polza.ai/docs/integracii/hermes-desktop.md): Подключение десктопного приложения Hermes Agent к Polza.ai через Custom Endpoint
+- [Kilo Code (VS Code / PyCharm)](https://polza.ai/docs/integracii/kilo-code.md): Интеграция Polza.ai с Kilo Code — AI-ассистент для VS Code и PyCharm
+- [LangChain](https://polza.ai/docs/integracii/langchain.md): LangChain + Polza.AI — OpenAI-совместимый API для чата, эмбеддингов и RAG через один ключ
+- [N8N](https://polza.ai/docs/integracii/n8n.md): Интеграция Polza.ai с N8N для автоматизации рабочих процессов
+- [OpenClaw](https://polza.ai/docs/integracii/openclaw.md): Интеграция Polza.ai с OpenClaw — мультиканальным AI-ассистентом для мессенджеров
+- [OpenClaw Desktop](https://polza.ai/docs/integracii/openclaw-desktop.md): Подключение десктопного приложения OpenClaw к Polza.ai через встроенный мастер настройки
+- [OpenCode](https://polza.ai/docs/integracii/opencode.md): Интеграция Polza.ai с OpenCode — терминальным AI-ассистентом
+- [Polza IDE (alpha)](https://polza.ai/docs/integracii/polza-ide.md): Открытая десктопная IDE с встроенным ИИ-агентом и нативной интеграцией с Polza.ai
+- [Polza.AI Proxy](https://polza.ai/docs/integracii/proxy.md): Локальный прокси для подключения IDE и CLI-инструментов с поддержкой выбора провайдера и других Polza-параметров
+- [RAG](https://polza.ai/docs/gaidy/rag.md): RAG через Polza.AI — эмбеддинги, поиск и генерация одним ключом
+- [Roo Code](https://polza.ai/docs/integracii/roo-code.md): Интеграция Polza.ai с Roo Code - AI-ассистент для программирования
+- [Qwen Code CLI](https://polza.ai/docs/integracii/qwen-code.md): Подключение Qwen Code CLI к Polza.AI — терминальный AI-агент с поддержкой OpenAI-совместимого API
+- [Qwen Code Desktop](https://polza.ai/docs/integracii/qwen-code-desktop.md): Подключение десктопного приложения Qwen Code к Polza.ai
+- [Введение в API](https://polza.ai/docs/api-reference/introduction.md): Обзор Polza.ai API и способы аутентификации
+- [POST Chat Completions](https://polza.ai/docs/api-reference/chat/completions.md): Основной эндпоинт для генерации текста и диалогов
+- [POST Responses](https://polza.ai/docs/api-reference/responses/create.md): Responses API — OpenAI-совместимый формат запросов с tool calling и streaming
+- [POST Images Generations](https://polza.ai/docs/api-reference/images/generations.md): Генерация изображений (OpenAI-совместимый API)
+- [POST Media](https://polza.ai/docs/api-reference/media/create.md): Универсальный API генерации медиа (изображения, видео, аудио)
+- [GET Media Status](https://polza.ai/docs/api-reference/media/status.md): Получение статуса генерации медиа
+- [POST Media Operations](https://polza.ai/docs/api-reference/media/operations.md): Выполнение операций над существующими медиа (extend, upscale)
+- [POST Audio Transcriptions](https://polza.ai/docs/api-reference/audio/transcriptions.md): Транскрибация аудио в текст (Speech-to-Text)
+- [POST Audio Speech](https://polza.ai/docs/api-reference/audio/speech.md): Синтез речи из текста (Text-to-Speech)
+- [POST Embeddings](https://polza.ai/docs/api-reference/embeddings/create.md): Создание векторных представлений текста
+- [POST Systemone](https://polza.ai/docs/api-reference/systemone/create.md): Ответы на типизированные вопросы к тексту — да/нет, выбор из вариантов, оценка по шкале — с вероятностями
+- [GET Models](https://polza.ai/docs/api-reference/models/list.md): Получение списка доступных моделей
+- [GET Models Catalog](https://polza.ai/docs/api-reference/models/catalog.md): Каталог моделей с фильтрацией и пагинацией
+- [Загрузить файл](https://polza.ai/docs/api-reference/storage/upload.md): Загрузка файла в хранилище
+- [Список файлов](https://polza.ai/docs/api-reference/storage/list-files.md): Получение списка файлов с фильтрацией и пагинацией
+- [Информация о файле](https://polza.ai/docs/api-reference/storage/get-file.md): Получение информации о конкретном файле
+- [Удалить файл](https://polza.ai/docs/api-reference/storage/delete-file.md): Удаление файла из хранилища
+- [Сохранить файл навсегда](https://polza.ai/docs/api-reference/storage/keep.md): Перевод файла в постоянное хранение
+- [Статистика хранилища](https://polza.ai/docs/api-reference/storage/stats.md): Получение статистики использования хранилища
+- [История генераций](https://polza.ai/docs/api-reference/history/generations.md): Получение истории генераций с фильтрацией и пагинацией
+- [GET Balance (устарел)](https://polza.ai/docs/api-reference/other/balance.md): Запрос текущего баланса аккаунта
+- [GET Balance v2](https://polza.ai/docs/api-reference/other/balance-v2.md): Баланс организации и сумма, доступная к трате
+- [GET Key](https://polza.ai/docs/api-reference/other/key.md): Лимит и расход API-ключа, которым сделан запрос
+
+## OpenAPI Specs
+
+- [openapi](https://polza.ai/api/openapi.json)
+
+## Optional
+
+- [Модели](https://polza.ai/models)
+- [Консоль](https://polza.ai/dashboard)
+
+
+This documentation is built and hosted on [Mintlify](https://mintlify.com), a developer documentation platform.

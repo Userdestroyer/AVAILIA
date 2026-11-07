@@ -1,16 +1,22 @@
 <script setup>
 import { Check, Globe, LoaderCircle, Sparkle, X } from 'lucide-vue-next';
 import MarkdownContent from '@/components/MarkdownContent.vue';
+import MessageActions from '@/components/chat/MessageActions.vue';
 import VendorIcon from '@/components/VendorIcon.vue';
 import { formatCost } from '@/lib/format';
 
-defineProps({
+const props = defineProps({
     answer: { type: Object, required: true },
 });
+
+defineEmits(['delete']);
+
+// Пока ответ пишется — удалить нельзя (гейтвей ещё отчитается по нему)
+const finished = () => !['pending', 'streaming'].includes(props.answer.status) && Number.isInteger(props.answer.id);
 </script>
 
 <template>
-    <div class="answer-frame space-y-2 px-4 py-3">
+    <div class="answer-frame space-y-2 px-2.5 py-2.5 md:px-4 md:py-3">
         <div v-if="answer.model" class="flex items-center gap-2 text-xs text-white/50">
             <VendorIcon :slug="answer.model.vendor" />
             {{ answer.model.name }}
@@ -36,8 +42,9 @@ defineProps({
             Думаю…
         </div>
         <p v-if="answer.status === 'failed'" class="text-sm text-hot-soft">{{ answer.error || 'Модель не ответила' }}</p>
-        <div v-if="answer.cost" class="flex justify-end">
-            <span class="text-xs text-white/55" title="Себестоимость ответа">{{ formatCost(answer.cost) }}</span>
+        <div v-if="finished() || answer.cost" class="-mb-1 flex items-center justify-between gap-2">
+            <MessageActions v-if="finished()" :text="answer.content" @delete="$emit('delete', answer)" />
+            <span v-if="answer.cost" class="ml-auto text-xs text-white/55" title="Себестоимость ответа">{{ formatCost(answer.cost) }}</span>
         </div>
     </div>
 </template>

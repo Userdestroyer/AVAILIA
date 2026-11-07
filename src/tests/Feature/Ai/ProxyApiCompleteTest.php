@@ -2,12 +2,15 @@
 
 namespace Tests\Feature\Ai;
 
+use App\Enums\Capability;
 use App\Enums\MessageRole;
 use App\Enums\ReasoningEffort;
 use App\Models\AiModel;
 use App\Models\Message;
+use App\Models\ProviderModel;
+use App\Models\ProviderModelCapability;
 use App\Models\Vendor;
-use App\Services\Ai\AiProvider;
+use App\Services\Ai\ProviderRegistry;
 use App\Services\Ai\Data\ChatOptions;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
@@ -21,7 +24,7 @@ class ProxyApiCompleteTest extends TestCase
     #[TestDox('Запрос уходит в OpenAI-совместимый chat/completions proxyapi с ключом и параметрами, ответ и usage разбираются')]
     public function test_complete_sends_openai_compatible_request(): void
     {
-        config(['ai.provider' => 'proxyapi', 'ai.providers.proxyapi' => ['url' => 'https://proxy.test/v1', 'key' => 'secret']]);
+        config(['ai.providers.proxyapi' => ['url' => 'https://proxy.test/v1', 'key' => 'secret']]);
 
         Http::fake([
             'proxy.test/*' => Http::response([
@@ -31,10 +34,13 @@ class ProxyApiCompleteTest extends TestCase
         ]);
 
         $model = (new AiModel(['slug' => 'claude-sonnet-5-5']))->setRelation('vendor', new Vendor(['slug' => 'anthropic']));
+        $offer = (new ProviderModel(['external_id' => 'anthropic/claude-sonnet-5-5']))
+            ->setRelation('aiModel', $model)
+            ->setRelation('capabilities', collect([new ProviderModelCapability(['capability' => Capability::Reasoning])]));
         $messages = [new Message(['role' => MessageRole::User, 'content' => 'Привет'])];
 
-        $completion = app(AiProvider::class)->complete(
-            $model, $messages, new ChatOptions(maxTokens: 1024, reasoningEffort: ReasoningEffort::High),
+        $completion = app(ProviderRegistry::class)->provider('proxyapi')->complete(
+            $offer, $messages, new ChatOptions(maxTokens: 1024, reasoningEffort: ReasoningEffort::High),
         );
 
         $this->assertSame('Привет!', $completion->content);

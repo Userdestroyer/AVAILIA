@@ -1,0 +1,167 @@
+> ## Documentation Index
+> Fetch the complete documentation index at: https://polza.ai/docs/llms.txt
+> Use this file to discover all available pages before exploring further.
+
+# Учет средств (Usage)
+
+> Отслеживание использования токенов и стоимости
+
+Usage Accounting — встроенная функция для отслеживания использования токенов и стоимости AI-запросов с возвратом информации в ответе.
+
+## Как работает
+
+* Автоматический подсчет токенов и расходов
+* Детальная аналитика по типам (prompt, completion, reasoning, cached)
+* Готовая стоимость в рублях, уже списанная
+* Информация включается в стандартный ответ API без задержек
+
+## Структура ответа
+
+Каждый ответ API содержит объект `usage`:
+
+```json theme={null}
+{
+  "usage": {
+    "prompt_tokens": 150,
+    "completion_tokens": 250,
+    "total_tokens": 400,
+    "cost_rub": 15.75,
+    "cost": 15.75,
+    "prompt_tokens_details": {
+      "cached_tokens": 100,
+      "audio_tokens": 10,
+      "video_tokens": 5
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 50,
+      "audio_tokens": 10,
+      "image_tokens": 5
+    }
+  }
+}
+```
+
+### Поля usage
+
+| Поле | Описание |
+| - | - |
+| `prompt_tokens` | Входящие токены |
+| `completion_tokens` | Выходящие токены |
+| `total_tokens` | Сумма всех токенов |
+| `cost_rub` | Стоимость в рублях |
+| `cost` | Стоимость в рублях (алиас `cost_rub`) |
+| `server_tool_use` | Число выполненных [веб-поисков](https://polza.ai/docs/gaidy/web-search.md) и вызовов [серверных инструментов](https://polza.ai/docs/gaidy/server-tools.md), например `{"web_search_requests": 1}`. `null`, если их не было |
+
+### Детализация входных токенов (prompt\_tokens\_details)
+
+| Поле | Описание |
+| - | - |
+| `cached_tokens` | Токены из кеша (\~90% дешевле) |
+| `audio_tokens` | Токены аудио во входных данных |
+| `video_tokens` | Токены видео во входных данных |
+
+### Детализация выходных токенов (completion\_tokens\_details)
+
+| Поле | Описание |
+| - | - |
+| `reasoning_tokens` | Токены рассуждений (для o1, R1 и др.) |
+| `audio_tokens` | Токены аудио в ответе |
+| `image_tokens` | Токены изображений в ответе |
+
+## Запросы с серверными инструментами
+
+Если в запросе есть [серверные инструменты](https://polza.ai/docs/gaidy/server-tools.md), модель может вызываться несколько раз. `usage` показывает итог по всем шагам и добавляет разбивку:
+
+```json theme={null}
+{
+  "usage": {
+    "prompt_tokens": 27,
+    "completion_tokens": 91,
+    "total_tokens": 118,
+    "server_tool_use": {
+      "web_search_requests": 1
+    },
+    "cost_rub": 0.51955,
+    "cost": 0.51955,
+    "cost_details": {
+      "inference_cost_rub": 0.01955,
+      "server_tools_cost_rub": 0.5
+    },
+    "server_tool_use_details": {
+      "web_search_requests": 1,
+      "tool_calls_requested": 1,
+      "tool_calls_executed": 1,
+      "steps": 2
+    }
+  }
+}
+```
+
+| Поле | Описание |
+| - | - |
+| `prompt_tokens`, `completion_tokens`, `total_tokens` | Сумма по всем шагам модели |
+| `cost_rub`, `cost` | Итоговая стоимость: модель на всех шагах и инструменты |
+| `cost_details.inference_cost_rub` | Из неё — модель, ₽ |
+| `cost_details.server_tools_cost_rub` | Из неё — инструменты, ₽ |
+| `server_tool_use` | Выполненные вызовы по инструментам: `web_search_requests`, `web_fetch_requests`, `datetime_requests`, … |
+| `server_tool_use_details` | Те же счётчики, а также `tool_calls_requested` (сколько вызовов запросила модель), `tool_calls_executed` (сколько выполнено) и `steps` (число шагов модели) |
+
+Те же поля отдаёт Responses API.
+
+## Типы токенов и стоимость
+
+| Тип | Описание | Стоимость |
+| - | - | - |
+| Prompt | Входящие сообщения, контекст | Базовая цена |
+| Completion | Генерируемый текст | 2-4x выше prompt |
+| Reasoning | Внутренние рассуждения моделей | \~4x выше обычных |
+| Cached | Из кеша провайдера | \~90% дешевле |
+
+## Streaming режим
+
+В потоковом режиме информация о `usage` приходит в последнем SSE-сообщении перед `[DONE]`:
+
+```
+data: {"choices":[{"delta":{"content":"..."}}]}
+data: {"choices":[{"delta":{"content":"..."}}]}
+data: {"choices":[],"usage":{"prompt_tokens":100,"completion_tokens":200,"cost_rub":5.50,"cost":5.50}}
+data: [DONE]
+```
+
+## Оптимизация расходов
+
+> [card] Используйте кеширование
+>
+> Для повторяющихся промптов экономия до 90%
+
+> [card] Выбирайте модель
+>
+> Подбирайте модель под сложность задачи
+
+> [card] Ограничивайте max\_tokens
+>
+> Устанавливайте разумные лимиты
+
+> [card] Мониторьте reasoning
+>
+> Reasoning токены дороже, но эффективнее
+
+## Проверка баланса
+
+Для отслеживания общего баланса используйте [API баланса](https://polza.ai/docs/api-reference/other/balance-v2.md):
+
+```bash theme={null}
+curl -H "Authorization: Bearer <API_KEY>" \
+  https://polza.ai/api/v2/balance
+```
+
+Ответ:
+
+```json theme={null}
+{
+  "amount": "1250.50"
+}
+```
+
+
+This documentation is built and hosted on [Mintlify](https://mintlify.com), a developer documentation platform.

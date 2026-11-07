@@ -127,11 +127,25 @@ type chatChunk struct {
 	Error *struct {
 		Message string `json:"message"`
 	} `json:"error"`
+	// События серверных инструментов Polza (stream_options.include_server_tool_events)
+	Polza *struct {
+		Event     string `json:"event"`
+		ID        string `json:"id"`
+		Type      string `json:"type"`
+		Status    string `json:"status"`
+		Arguments struct {
+			Query string `json:"query"`
+		} `json:"arguments"`
+		Summary struct {
+			Query string `json:"query"`
+		} `json:"summary"`
+	} `json:"polza"`
 }
 
 func readChat(r io.Reader, emit func(Chunk)) (Result, error) {
 	var res Result
 	var content strings.Builder
+	var searches searchLog
 
 	err := readSSE(r, func(payload []byte) (bool, error) {
 		var chunk chatChunk
@@ -140,6 +154,21 @@ func readChat(r io.Reader, emit func(Chunk)) (Result, error) {
 		}
 		if chunk.Error != nil {
 			return true, errors.New(chunk.Error.Message)
+		}
+		// Поиск Polza: tool_call — модель ищет (с запросом), tool_result — готово / не удалось
+		if p := chunk.Polza; p != nil && p.Type == "polza:web_search" {
+			switch p.Event {
+			case "tool_call":
+				s := searches.upsert(Search{ID: p.ID, Status: "searching", Query: p.Arguments.Query, billable: true})
+				emit(Chunk{Kind: "search", Search: &s})
+			case "tool_result":
+				status := "failed"
+				if p.Status == "completed" {
+					status = "done"
+				}
+				s := searches.upsert(Search{ID: p.ID, Status: status, Query: p.Summary.Query})
+				emit(Chunk{Kind: "search", Search: &s})
+			}
 		}
 		for _, choice := range chunk.Choices {
 			if text := reasoningText(choice.Delta.ReasoningContent, choice.Delta.Reasoning); text != "" {
@@ -157,6 +186,17 @@ func readChat(r io.Reader, emit func(Chunk)) (Result, error) {
 	})
 
 	res.Content = content.String()
+	res.Searches = searches.items
+	res.WebSearches = searches.billable()
+	// Polza сообщает число поисков в usage (сюда же попадает и поиск «до вызова» модели)
+	var usage struct {
+		ServerToolUse *struct {
+			WebSearchRequests int `json:"web_search_requests"`
+		} `json:"server_tool_use"`
+	}
+	if json.Unmarshal(res.Usage, &usage) == nil && usage.ServerToolUse != nil {
+		res.WebSearches = usage.ServerToolUse.WebSearchRequests
+	}
 	return res, err
 }
 

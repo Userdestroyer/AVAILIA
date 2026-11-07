@@ -101,7 +101,10 @@ const toggle = (what) => (open.value = open.value === what ? null : what);
                 <span class="min-w-0 flex-1">
                     <span class="block text-[15px]">{{ m.name }}</span>
                     <span class="block text-xs text-white/50">
-                        {{ formatPrice(m.price_input, m.price_currency) }} / {{ formatPrice(m.price_output, m.price_currency) }} за 1M токенов
+                        <template v-if="m.price_input !== null && m.price_output !== null">
+                            {{ formatPrice(m.price_input, m.price_currency) }} / {{ formatPrice(m.price_output, m.price_currency) }} за 1M токенов
+                        </template>
+                        <template v-else>цена не указана</template>
                     </span>
                 </span>
                 <Check v-if="m.id === modelId" class="size-4 text-cool-soft" :stroke-width="1.5" />

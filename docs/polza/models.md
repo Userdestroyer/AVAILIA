@@ -1,0 +1,278 @@
+> ## Documentation Index
+> Fetch the complete documentation index at: https://polza.ai/docs/llms.txt
+> Use this file to discover all available pages before exploring further.
+
+# Получение списка моделей
+
+> Как получить и фильтровать список доступных AI моделей через API
+
+> [!NOTE]
+>
+> Актуальный список всех моделей с ценами и возможностями доступен на [polza.ai/models](https://polza.ai/models).
+
+В этом гайде вы узнаете как получить список моделей программно через API, фильтровать их по типу и получать детальную информацию о ценах и возможностях.
+
+> [!NOTE]
+>
+> Полная документация endpoint доступна в [API Reference](https://polza.ai/docs/api-reference/models/list.md).
+
+## Endpoint
+
+```
+GET https://polza.ai/api/v1/models
+```
+
+Возвращает список всех доступных AI моделей с информацией о типе, возможностях и ценах.
+
+## Параметры запроса
+
+| Параметр | Тип | Обязательный | Описание |
+| - | - | - | - |
+| `type` | string | Нет | Фильтр по типу модели |
+| `include_providers` | boolean | Нет | Включить детальную информацию о провайдерах |
+| `include_capabilities` | boolean | Нет | Добавить объект `capabilities` к `top_provider` и провайдерам; действует вместе с `include_providers=true` |
+
+### Значения параметра type
+
+| Значение | Описание |
+| - | - |
+| `chat` | Текстовые модели для чата (GPT-4o, Claude, Gemini и др.) |
+| `image` | Модели генерации изображений (DALL-E, Flux и др.) |
+| `embedding` | Модели для создания эмбеддингов (text-embedding-3 и др.) |
+| `audio` | Модели для работы с аудио |
+| `video` | Модели генерации видео |
+| `tts` | Модели синтеза речи (Text-to-Speech) |
+| `stt` | Модели распознавания речи (Speech-to-Text) |
+| `classification` | Классификация и оценка текста: модель отвечает на вопросы «да/нет», выбирает из вариантов и оценивает по шкале ([Jev](https://polza.ai/docs/gaidy/jev.md)) |
+
+## Примеры запросов
+
+```typescript TypeScript theme={null}
+// Все модели
+const response = await fetch('https://polza.ai/api/v1/models', {
+  headers: {
+    'Authorization': 'Bearer <POLZA_AI_API_KEY>'
+  }
+});
+const data = await response.json();
+console.log(`Найдено ${data.data.length} моделей`);
+
+// Только чат-модели
+const chatModels = await fetch('https://polza.ai/api/v1/models?type=chat', {
+  headers: {
+    'Authorization': 'Bearer <POLZA_AI_API_KEY>'
+  }
+});
+
+// С информацией о провайдерах
+const detailed = await fetch('https://polza.ai/api/v1/models?type=chat&include_providers=true', {
+  headers: {
+    'Authorization': 'Bearer <POLZA_AI_API_KEY>'
+  }
+});
+```
+
+```python Python theme={null}
+import requests
+
+headers = {'Authorization': 'Bearer <POLZA_AI_API_KEY>'}
+
+# Все модели
+response = requests.get(
+    'https://polza.ai/api/v1/models',
+    headers=headers
+)
+data = response.json()
+print(f"Найдено {len(data['data'])} моделей")
+
+# Только чат-модели
+chat_models = requests.get(
+    'https://polza.ai/api/v1/models',
+    params={'type': 'chat'},
+    headers=headers
+)
+
+# С информацией о провайдерах
+detailed = requests.get(
+    'https://polza.ai/api/v1/models',
+    params={'type': 'chat', 'include_providers': 'true'},
+    headers=headers
+)
+```
+
+```bash cURL theme={null}
+# Все модели
+curl "https://polza.ai/api/v1/models" \
+  -H "Authorization: Bearer <POLZA_AI_API_KEY>"
+
+# Только чат-модели
+curl "https://polza.ai/api/v1/models?type=chat" \
+  -H "Authorization: Bearer <POLZA_AI_API_KEY>"
+
+# С информацией о провайдерах
+curl "https://polza.ai/api/v1/models?type=chat&include_providers=true" \
+  -H "Authorization: Bearer <POLZA_AI_API_KEY>"
+```
+
+## Структура ответа
+
+```json theme={null}
+{
+  "data": [
+    {
+      "id": "openai/gpt-4o",
+      "name": "GPT-4o",
+      "type": "chat",
+      "short_description": "Флагманская мультимодальная модель OpenAI",
+      "created": 1715367049,
+      "architecture": {
+        "modality": "text+image->text",
+        "input_modalities": ["text", "image"],
+        "output_modalities": ["text"],
+        "tokenizer": "o200k_base"
+      },
+      "top_provider": {
+        "is_moderated": true,
+        "context_length": 128000,
+        "max_completion_tokens": 16384,
+        "pricing": {
+          "prompt_per_million": "7.50",
+          "completion_per_million": "22.50",
+          "currency": "RUB"
+        },
+        "supported_parameters": ["temperature", "top_p", "frequency_penalty", "presence_penalty", "tools", "tool_choice", "response_format"],
+        "capabilities": {
+          "tools": { "status": "supported", "verified_at": "2026-10-07T09:00:00.000Z" },
+          "json_schema_strict": { "status": "supported", "verified_at": null },
+          "reasoning_effort": { "status": "rejected", "verified_at": "2026-10-07T09:00:00.000Z" },
+          "input_pdf": { "status": "unknown", "verified_at": null }
+        },
+        "default_parameters": {
+          "temperature": 1.0,
+          "top_p": 1.0,
+          "frequency_penalty": 0
+        }
+      },
+      "endpoints": ["/api/v1/chat/completions"]
+    }
+  ]
+}
+```
+
+### Описание полей
+
+| Поле | Тип | Описание |
+| - | - | - |
+| `id` | string | Идентификатор модели для использования в API запросах |
+| `name` | string | Человекочитаемое название модели |
+| `type` | string | Тип модели: `chat`, `image`, `embedding`, `audio`, `video`, `tts`, `stt`, `classification` |
+| `short_description` | string? | Краткое описание модели |
+| `created` | number | Unix timestamp создания модели |
+| `architecture` | object | Информация об архитектуре модели |
+| `top_provider` | object | Информация о лучшем доступном провайдере |
+| `endpoints` | array | Список endpoint'ов, поддерживающих эту модель |
+| `parameters` | object? | Параметры медиа-моделей (разрешения, форматы и др.) |
+| `operations` | array? | Доступные операции (для video/tts/stt моделей) |
+
+### Поля architecture
+
+| Поле | Описание |
+| - | - |
+| `modality` | Строка вида `input->output` (например `text+image->text`) |
+| `input_modalities` | Массив поддерживаемых входных модальностей |
+| `output_modalities` | Массив поддерживаемых выходных модальностей |
+| `tokenizer` | Используемый токенизатор |
+
+### Поля top\_provider
+
+| Поле | Описание |
+| - | - |
+| `is_moderated` | Модерируется ли контент провайдером |
+| `context_length` | Максимальный размер контекста в токенах |
+| `max_completion_tokens` | Максимальное количество токенов в ответе |
+| `pricing` | Цены (см. ниже) |
+| `supported_parameters` | Список поддерживаемых параметров запроса |
+| `capabilities` | Возможности провайдера со статусом проверки (см. ниже) |
+| `default_parameters` | Значения параметров по умолчанию |
+
+Те же поля есть у каждого элемента `providers[]` (запрос с `include_providers=true`).
+
+### Возможности провайдера (capabilities)
+
+`supported_parameters` отвечает на вопрос «принимает ли провайдер параметр», но не отличает «точно не умеет» от «ещё не проверяли». Объект `capabilities` даёт статус по каждой возможности: Polza проверяет провайдеров тестовыми запросами, берёт данные провайдера и правит их вручную.
+
+В списке моделей объект добавляется по запросу — параметром `include_capabilities=true` вместе с `include_providers=true`: без него ответ прежний. В ответе одной модели (`GET /v1/models/{id}`) `capabilities` есть всегда — у `top_provider` и у каждого элемента `providers[]`.
+
+```bash theme={null}
+curl "https://polza.ai/api/v1/models?type=chat&include_providers=true&include_capabilities=true" \
+  -H "Authorization: Bearer <POLZA_AI_API_KEY>"
+```
+
+Ключ — возможность, значение — объект:
+
+| Поле | Тип | Описание |
+| - | - | - |
+| `status` | string | `supported` — работает; `rejected` — провайдер отвечает ошибкой; `ignored` — провайдер принимает параметр, но не выполняет его; `unknown` — проверки ещё не было |
+| `values` | string\[]? | Принятые значения — только у `reasoning_effort` (уровни рассуждений, например `["low", "medium", "high"]`) |
+| `verified_at` | string \| null | Когда возможность последний раз проверена тестовым запросом или вручную (ISO 8601); `null` — статус известен только из данных провайдера или проверки не было |
+
+В объекте есть только возможности, о которых у Polza есть данные; отсутствующий ключ означает то же, что `unknown`.
+
+| Ключ | Возможность |
+| - | - |
+| `tools` | Вызов инструментов (`tools`) |
+| `tool_choice_required` | `tool_choice: "required"` |
+| `tool_choice_function` | Вызов конкретной функции: `tool_choice: {"type": "function", ...}` |
+| `tool_choice_none` | `tool_choice: "none"` при переданных `tools` |
+| `parallel_tool_calls` | Несколько вызовов инструментов в одном ответе |
+| `json_object` | `response_format: {"type": "json_object"}` |
+| `json_schema_strict` | `response_format: {"type": "json_schema"}` со `strict: true` |
+| `reasoning_toggle` | Рассуждения можно выключить |
+| `reasoning_effort` | Уровень рассуждений `reasoning_effort`; принятые уровни — в `values` |
+| `stream_usage` | Расход токенов в последнем чанке стрима (`stream_options.include_usage`) |
+| `input_image` | Картинки во входных сообщениях |
+| `input_pdf` | PDF-файлы во входных сообщениях |
+| `prompt_cache_implicit` | Автоматическое кэширование промпта на стороне провайдера |
+| `prompt_cache_explicit` | Кэширование промпта по разметке `cache_control` |
+| `native_web_search` | Веб-поиск на стороне провайдера |
+
+Polza учитывает эти статусы при выборе провайдера: например, запрос с `tools` не уйдёт провайдеру, у которого `tools` в статусе `rejected` или `ignored`.
+
+### Поля pricing
+
+Набор полей зависит от типа модели:
+
+| Поле | Описание |
+| - | - |
+| `prompt_per_million` | Цена за промпт (RUB за 1М токенов) |
+| `completion_per_million` | Цена за completion (RUB за 1М токенов) |
+| `image_input_per_million` | Цена за входные изображения (RUB за 1М токенов) |
+| `audio_per_million` | Цена за аудио (RUB за 1М токенов) |
+| `per_request` | Цена за запрос (RUB) |
+| `stt_per_minute` | Цена за минуту распознавания речи (RUB) |
+| `tts_per_million_characters` | Цена за 1М символов синтеза речи (RUB) |
+| `video_per_second` | Цена за секунду видео (RUB) |
+| `internal_reasoning_per_million` | Цена за reasoning токены (RUB за 1М) |
+| `input_cache_read_per_million` | Цена за чтение из кэша (RUB за 1М токенов) |
+| `input_cache_write_per_million` | Цена за запись в кэш (RUB за 1М токенов) |
+| `currency` | Валюта (всегда `RUB`) |
+
+## Использование ID модели
+
+ID модели из ответа используется в параметре `model` при отправке запросов:
+
+```typescript theme={null}
+const completion = await openai.chat.completions.create({
+  model: 'openai/gpt-4o',  // ID модели из /models
+  messages: [...]
+});
+```
+
+## Следующие шаги
+
+> [card] [Текстовые запросы](https://polza.ai/docs/gaidy/chat-completions.md)
+>
+> Научитесь отправлять запросы к текстовым моделям
+
+
+This documentation is built and hosted on [Mintlify](https://mintlify.com), a developer documentation platform.

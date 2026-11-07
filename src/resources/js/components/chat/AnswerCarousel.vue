@@ -12,6 +12,8 @@ const props = defineProps({
     answers: { type: Array, required: true },
 });
 
+defineEmits(['delete']);
+
 const track = ref(null);
 const cards = ref([]);
 const active = ref(0);
@@ -110,7 +112,7 @@ onBeforeUnmount(() => {
                 :class="index === active ? '' : 'cursor-pointer opacity-35 blur-[1.5px] saturate-50'"
                 @click="index !== active && go(index)"
             >
-                <AnswerCard :answer="answer" />
+                <AnswerCard :answer="answer" @delete="$emit('delete', $event)" />
             </div>
         </div>
     </div>

@@ -39,6 +39,10 @@ func Load() (Config, error) {
 				BaseURL: env("PROXY_API_URL", "https://api.proxyapi.ru/v1"),
 				APIKey:  os.Getenv("PROXY_API_KEY"),
 			},
+			"polza": {
+				BaseURL: env("POLZA_API_URL", "https://polza.ai/api/v1"),
+				APIKey:  os.Getenv("POLZA_API_KEY"),
+			},
 		},
 	}
 

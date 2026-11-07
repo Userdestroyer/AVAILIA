@@ -5,9 +5,12 @@ namespace Tests\Feature\Chat;
 use App\Enums\MessageRole;
 use App\Enums\MessageStatus;
 use App\Models\AiModel;
+use App\Models\Provider;
+use App\Models\ProviderModel;
 use App\Models\User;
 use Database\Seeders\DatabaseSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\TestDox;
 use Tests\TestCase;
@@ -26,11 +29,8 @@ class GatewayCompleteTest extends TestCase
     {
         config(['ai.gateway.secret' => 'gateway-secret']);
 
-        // 1580 ₽ / 7900 ₽ за 1M; кэш без своей цены — по цене ввода
-        $model = AiModel::where('slug', 'claude-fable-5-1')->first();
-        $answer = User::factory()->create()->chats()->create()->messages()->create([
-            'role' => MessageRole::Assistant, 'status' => MessageStatus::Pending, 'ai_model_id' => $model->id,
-        ]);
+        // proxyapi: 1580 ₽ / 7900 ₽ за 1M; кэш без своей цены — по цене ввода
+        $answer = $this->pendingAnswer('proxyapi', 'claude-fable-5-1');
         $url = "/internal/gateway/messages/{$answer->id}/complete";
         $result = [
             'status' => 'done',
@@ -54,31 +54,56 @@ class GatewayCompleteTest extends TestCase
         $this->assertSame(MessageStatus::Done, $answer->fresh()->status);
     }
 
-    #[Group('D1')]
-    #[TestDox('Поиски в интернете добавляются к себестоимости по цене за поиск, журнал поисков сохраняется')]
-    public function test_web_searches_are_added_to_cost(): void
+    public static function costs(): array
     {
-        config(['ai.gateway.secret' => 'gateway-secret']);
-
-        // Haiku: 30 ₽ / 150 ₽ за 1M; поиск у Anthropic — 1 ₽
-        $model = AiModel::where('slug', 'claude-haiku-5-5')->first();
-        $answer = User::factory()->create()->chats()->create()->messages()->create([
-            'role' => MessageRole::Assistant, 'status' => MessageStatus::Pending, 'ai_model_id' => $model->id,
-        ]);
         $searches = [['id' => 'srvtoolu_1', 'status' => 'done', 'query' => 'курс доллара ЦБ']];
 
-        $this->postJson("/internal/gateway/messages/{$answer->id}/complete", [
-            'status' => 'done',
-            'format' => 'messages',
-            'content' => '81,79 ₽',
-            'usage' => ['input_tokens' => 14022, 'output_tokens' => 456, 'server_tool_use' => ['web_search_requests' => 1]],
-            'web_searches' => 1,
-            'searches' => $searches,
-        ], ['X-Gateway-Secret' => 'gateway-secret'])
-            // (14022 × 30 + 456 × 150) / 1M + 1 поиск × 1 ₽
-            ->assertJsonPath('message.cost', ['amount' => '1.48906000', 'currency' => 'RUB'])
-            ->assertJsonPath('message.searches', $searches);
+        return [
+            // Haiku у proxyapi: 30 ₽ / 150 ₽ за 1M, поиск 1 ₽ → (14022 × 30 + 456 × 150) / 1M + 1
+            'proxyapi — по расценкам, с поиском' => ['proxyapi', true, [
+                'format' => 'messages',
+                'usage' => ['input_tokens' => 14022, 'output_tokens' => 456],
+                'web_searches' => 1,
+                'searches' => $searches,
+            ], ['amount' => '1.48906000', 'currency' => 'RUB'], $searches],
+            // Polza называет стоимость сама — она точнее расценок (источник, кэш, поиск уже учтены)
+            'polza — стоимость от провайдера' => ['polza', true, [
+                'usage' => ['prompt_tokens' => 27, 'completion_tokens' => 91, 'cost_rub' => 0.51955],
+                'web_searches' => 1,
+            ], ['amount' => '0.51955000', 'currency' => 'RUB'], []],
+            // Расценок нет, провайдер стоимость не сообщил — неизвестна, но ответ сохраняется
+            'нет расценок — стоимость неизвестна' => ['proxyapi', false, [
+                'usage' => ['prompt_tokens' => 27, 'completion_tokens' => 91],
+            ], null, []],
+        ];
+    }
 
-        $this->assertSame(1, $answer->fresh()->web_searches);
+    #[Group('D1')]
+    #[DataProvider('costs')]
+    #[TestDox('Себестоимость ответа: от провайдера, если сообщил, иначе по расценкам с поиском; без расценок — неизвестна')]
+    public function test_answer_cost(string $provider, bool $withPrices, array $result, ?array $cost, array $searches): void
+    {
+        config(['ai.gateway.secret' => 'gateway-secret']);
+        $answer = $this->pendingAnswer($provider, 'claude-haiku-5-5');
+        if (! $withPrices) {
+            ProviderModel::where('provider_id', $answer->provider_id)->update(['price_input' => null, 'price_output' => null]);
+        }
+
+        $this->postJson("/internal/gateway/messages/{$answer->id}/complete", ['status' => 'done', 'content' => 'Ответ', ...$result],
+            ['X-Gateway-Secret' => 'gateway-secret'])
+            ->assertOk()
+            ->assertJsonPath('message.status', 'done')
+            ->assertJsonPath('message.cost', $cost)
+            ->assertJsonPath('message.searches', $searches);
+    }
+
+    private function pendingAnswer(string $provider, string $model)
+    {
+        return User::factory()->create()->chats()->create()->messages()->create([
+            'role' => MessageRole::Assistant,
+            'status' => MessageStatus::Pending,
+            'ai_model_id' => AiModel::where('slug', $model)->value('id'),
+            'provider_id' => Provider::where('slug', $provider)->value('id'),
+        ]);
     }
 }

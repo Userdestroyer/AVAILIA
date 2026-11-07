@@ -7,10 +7,11 @@ use App\Enums\MessageStatus;
 use App\Models\AiModel;
 use App\Models\Chat;
 use App\Models\Message;
+use App\Models\ProviderModel;
 use App\Models\User;
-use App\Services\Ai\AiProvider;
 use App\Services\Ai\Data\ChatOptions;
 use App\Services\Ai\Data\ChatRequest;
+use App\Services\Ai\ProviderRegistry;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Redis;
@@ -23,16 +24,16 @@ use Illuminate\Support\Str;
  */
 class ChatStream
 {
-    public function __construct(private AiProvider $provider) {}
+    public function __construct(private ProviderRegistry $providers) {}
 
     /**
-     * @param  Collection<int, AiModel>  $models
+     * @param  Collection<int, ProviderModel>  $offers  предложения моделей у провайдера, в порядке выбора юзера
      * @return array{chat: Chat, userMessage: Message, answers: list<array{message: Message, token: string}>}
      */
-    public function start(User $user, ?Chat $chat, Collection $models, string $content, ChatOptions $options): array
+    public function start(User $user, ?Chat $chat, Collection $offers, string $content, ChatOptions $options): array
     {
-        [$chat, $userMessage, $answers] = DB::transaction(function () use ($user, $chat, $models, $content) {
-            $primary = $models->first();
+        [$chat, $userMessage, $answers] = DB::transaction(function () use ($user, $chat, $offers, $content) {
+            $primary = $offers->first()->aiModel;
 
             if ($chat) {
                 $chat->update(['ai_model_id' => $primary->id]);
@@ -43,11 +44,12 @@ class ChatStream
 
             $userMessage = $chat->messages()->create(['role' => MessageRole::User, 'content' => $content]);
 
-            $answers = $models->map(fn (AiModel $model) => $chat->messages()->create([
+            $answers = $offers->map(fn (ProviderModel $offer) => $chat->messages()->create([
                 'parent_id' => $userMessage->id,
                 'role' => MessageRole::Assistant,
                 'status' => MessageStatus::Pending,
-                'ai_model_id' => $model->id,
+                'ai_model_id' => $offer->ai_model_id,
+                'provider_id' => $offer->provider_id,
             ]));
 
             return [$chat, $userMessage, $answers];
@@ -56,14 +58,15 @@ class ChatStream
         $conversation = $chat->messages()->where('id', '<=', $userMessage->id)->orderBy('id')->get();
         $redis = Redis::connection('gateway');
 
-        $started = $answers->map(function (Message $answer) use ($models, $conversation, $options, $redis) {
-            $model = $models->firstWhere('id', $answer->ai_model_id)->loadMissing('vendor');
-            $request = $this->provider->request($model, $this->historyFor($conversation, $model), $options);
+        $started = $answers->map(function (Message $answer) use ($offers, $conversation, $options, $redis) {
+            $offer = $offers->firstWhere('ai_model_id', $answer->ai_model_id);
+            $provider = $this->providers->provider($offer->provider->slug);
+            $request = $provider->request($offer, $this->historyFor($conversation, $offer->aiModel), $options);
 
             // Ключ провайдера сюда не кладём — он есть у гейтвея; кладём только тело запроса
             $token = Str::random(48);
             $redis->setex("stream:{$token}", config('ai.gateway.stream_ttl'), json_encode([
-                'provider' => $this->provider->name(),
+                'provider' => $provider->name(),
                 'message_id' => $answer->id,
                 // Формат определяет, как гейтвей разбирает стрим; путь — куда слать (база — у гейтвея)
                 'format' => $request->format,
@@ -126,18 +129,16 @@ class ChatStream
             return $message;
         }
 
-        $usage = $this->provider->parseUsage($result['usage'] ?? [], $result['format'] ?? ChatRequest::FORMAT_CHAT);
+        $provider = $this->providers->provider($message->provider?->slug ?? $this->providers->activeSlug());
+        $offer = ProviderModel::where('provider_id', $message->provider_id)->where('ai_model_id', $message->ai_model_id)->first();
+        $rawUsage = $result['usage'] ?? [];
+        $usage = $provider->parseUsage($rawUsage, $result['format'] ?? ChatRequest::FORMAT_CHAT);
         $searches = (int) ($result['web_searches'] ?? 0);
-        $model = $message->aiModel;
 
-        // Себестоимость = токены + каждый поиск по цене агрегатора
-        $cost = $model
-            ? bcadd(
-                $model->calculateCost($usage->input, $usage->output, $usage->cacheRead, $usage->cacheWrite),
-                bcmul((string) $searches, $this->provider->webSearchPrice($model->loadMissing('vendor')), 8),
-                8,
-            )
-            : '0';
+        // Себестоимость: что сообщил провайдер (точнее), иначе по расценкам; нет расценок — неизвестна
+        $reported = $provider->reportedCost($rawUsage);
+        $cost = $reported['amount']
+            ?? $offer?->calculateCost($usage->input, $usage->output, $usage->cacheRead, $usage->cacheWrite, $searches);
 
         $message->update([
             'status' => MessageStatus::Done,
@@ -149,10 +150,11 @@ class ChatStream
             'web_searches' => $searches,
             'search_log' => $result['searches'] ?? null,
             'cost' => $cost,
-            'cost_currency' => $model?->price_currency ?? 'USD',
+            'cost_currency' => $reported['currency'] ?? $offer?->price_currency ?? 'RUB',
         ]);
 
-        $message->chat->touch();
+        // Чат могли удалить, пока ответ писался — ответ всё равно сохранён и учтён
+        $message->chat?->touch();
 
         return $message;
     }

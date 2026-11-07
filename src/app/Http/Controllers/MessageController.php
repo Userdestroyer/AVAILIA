@@ -4,15 +4,42 @@ namespace App\Http\Controllers;
 
 use App\Enums\ReasoningEffort;
 use App\Http\Requests\StoreMessageRequest;
+use App\Enums\MessageRole;
+use App\Enums\MessageStatus;
 use App\Http\Resources\MessageResource;
-use App\Models\AiModel;
+use App\Models\Message;
+use Illuminate\Http\Request;
+use Illuminate\Http\Response;
+use Illuminate\Support\Facades\DB;
 use App\Services\Ai\Data\ChatOptions;
+use App\Services\Ai\ProviderRegistry;
 use App\Services\Chat\ChatStream;
 use Illuminate\Http\JsonResponse;
 
 class MessageController extends Controller
 {
-    public function store(StoreMessageRequest $request, ChatStream $stream): JsonResponse
+    /**
+     * Мягкое удаление: из чата и из истории для модели пропадает, в учёте и лимите остаётся.
+     * Вопрос удаляется вместе с ответами — иначе они «прилипли» бы к предыдущему ходу.
+     */
+    public function destroy(Request $request, Message $message): Response
+    {
+        abort_unless($message->chat?->user_id === $request->user()->id, 404);
+
+        // Пока ответ пишется, удалить нельзя: гейтвей ещё отчитается по нему
+        abort_if(in_array($message->status, [MessageStatus::Pending, MessageStatus::Streaming], true), 409, 'Ответ ещё пишется');
+
+        DB::transaction(function () use ($message) {
+            if ($message->role === MessageRole::User) {
+                $message->answers()->delete();
+            }
+            $message->delete();
+        });
+
+        return response()->noContent();
+    }
+
+    public function store(StoreMessageRequest $request, ChatStream $stream, ProviderRegistry $providers): JsonResponse
     {
         $user = $request->user();
 
@@ -25,6 +52,12 @@ class MessageController extends Controller
             return response()->json(['message' => "Дневной лимит запросов: осталось {$left} из {$limit}."], 429);
         }
 
+        // Модель есть в каталоге, но у текущего провайдера не подключена — отправлять некуда
+        $offers = $providers->offerings($modelIds);
+        if ($offers->count() !== count($modelIds)) {
+            return response()->json(['message' => 'Эта модель сейчас недоступна у провайдера — выберите другую.'], 422);
+        }
+
         // Чужой или несуществующий чат — 404, а не новый чат
         $chat = $request->filled('chat_id') ? $user->chats()->findOrFail($request->input('chat_id')) : null;
 
@@ -32,11 +65,12 @@ class MessageController extends Controller
             $user,
             $chat,
             // Порядок — как выбрал юзер: первая модель — основная
-            AiModel::findMany($modelIds)->sortBy(fn (AiModel $model) => array_search($model->id, $modelIds))->values(),
+            collect($modelIds)->map(fn (int $id) => $offers[$id]),
             $request->string('content')->trim(),
             new ChatOptions(
                 maxTokens: $request->input('max_tokens'),
                 reasoningEffort: $request->enum('reasoning_effort', ReasoningEffort::class),
+                temperature: $request->filled('temperature') ? $request->float('temperature') : null,
                 webSearch: $request->boolean('web_search'),
                 maxWebSearches: $request->input('max_web_searches'),
                 allowedDomains: $request->input('allowed_domains') ?? [],

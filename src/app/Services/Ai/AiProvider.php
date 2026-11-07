@@ -2,7 +2,8 @@
 
 namespace App\Services\Ai;
 
-use App\Models\AiModel;
+use App\Enums\Capability;
+use App\Models\ProviderModel;
 use App\Models\Message;
 use App\Services\Ai\Data\ChatOptions;
 use App\Services\Ai\Data\ChatRequest;
@@ -11,8 +12,11 @@ use App\Services\Ai\Data\Usage;
 use Illuminate\Support\Facades\Http;
 
 /**
- * Агрегатор с OpenAI-совместимым API (chat/completions): proxyapi, Poiza и т.п.
- * Наследники задают то, чем агрегаторы отличаются: id модели, заголовки, доп. поля запроса.
+ * Агрегатор с OpenAI-совместимым API (chat/completions): proxyapi, Polza и т.п.
+ * Работает с предложением модели у этого агрегатора (ProviderModel): там id модели, источник и расценки.
+ * Наследники задают то, чем агрегаторы отличаются: поиск, доп. поля запроса, учёт стоимости.
+ * Параметры, которые модель не принимает (по её возможностям), в запрос не попадают —
+ * в мульти-запросе одна настройка уходит каждой модели настолько, насколько та её умеет.
  */
 abstract class AiProvider
 {
@@ -26,7 +30,21 @@ abstract class AiProvider
     /**
      * Идентификатор модели у этого агрегатора.
      */
-    abstract public function modelId(AiModel $model): string;
+    public function modelId(ProviderModel $offer): string
+    {
+        return $offer->external_id;
+    }
+
+    /**
+     * Стоимость, которую агрегатор сообщил сам (точнее любых расценок), или null.
+     *
+     * @param  array<string, mixed>  $usage
+     * @return array{amount: string, currency: string}|null
+     */
+    public function reportedCost(array $usage): ?array
+    {
+        return null;
+    }
 
     /**
      * Как у этого агрегатора искать в интернете моделью: формат API и какие параметры
@@ -34,17 +52,9 @@ abstract class AiProvider
      *
      * @return array{format: string, max_uses: bool, domains: bool}|null
      */
-    public function webSearch(AiModel $model): ?array
+    public function webSearch(ProviderModel $offer): ?array
     {
         return null;
-    }
-
-    /**
-     * Цена одного поиска в валюте цен модели.
-     */
-    public function webSearchPrice(AiModel $model): string
-    {
-        return '0';
     }
 
     /**
@@ -53,27 +63,28 @@ abstract class AiProvider
      *
      * @param  iterable<Message>  $messages
      */
-    public function request(AiModel $model, iterable $messages, ChatOptions $options, bool $stream = true): ChatRequest
+    public function request(ProviderModel $offer, iterable $messages, ChatOptions $options, bool $stream = true): ChatRequest
     {
-        $search = $options->webSearch ? $this->webSearch($model) : null;
+        $search = $options->webSearch ? $this->webSearch($offer) : null;
 
         return match ($search['format'] ?? null) {
-            ChatRequest::FORMAT_MESSAGES => $this->messagesRequest($model, $messages, $options, $search, $stream),
-            ChatRequest::FORMAT_RESPONSES => $this->responsesRequest($model, $messages, $options, $search, $stream),
-            default => $this->chatRequest($model, $messages, $options, $stream),
+            ChatRequest::FORMAT_MESSAGES => $this->messagesRequest($offer, $messages, $options, $search, $stream),
+            ChatRequest::FORMAT_RESPONSES => $this->responsesRequest($offer, $messages, $options, $search, $stream),
+            default => $this->chatRequest($offer, $messages, $options, $stream),
         };
     }
 
     /**
      * @param  iterable<Message>  $messages
      */
-    public function chatRequest(AiModel $model, iterable $messages, ChatOptions $options, bool $stream = false): ChatRequest
+    public function chatRequest(ProviderModel $offer, iterable $messages, ChatOptions $options, bool $stream = false): ChatRequest
     {
         $body = array_filter([
-            'model' => $this->modelId($model),
+            'model' => $this->modelId($offer),
             'messages' => $this->formatMessages($messages),
-            'max_tokens' => $options->maxTokens,
-            'reasoning_effort' => $options->reasoningEffort?->value,
+            'max_tokens' => $this->maxTokens($offer, $options),
+            'temperature' => $this->temperature($offer, $options),
+            'reasoning_effort' => $this->reasoningEffort($offer, $options),
             'stream' => $stream ?: null,
             // Без этого OpenAI-совместимый стрим не отдаёт usage в последнем чанке
             'stream_options' => $stream ? ['include_usage' => true] : null,
@@ -82,7 +93,7 @@ abstract class AiProvider
         return new ChatRequest(
             url: rtrim($this->baseUrl, '/').'/chat/completions',
             headers: $this->headers(),
-            body: [...$body, ...$this->extraBody($model, $options)],
+            body: [...$body, ...$this->extraBody($offer, $options, $stream)],
         );
     }
 
@@ -92,7 +103,7 @@ abstract class AiProvider
      * @param  iterable<Message>  $messages
      * @param  array{format: string, max_uses: bool, domains: bool}  $search
      */
-    protected function responsesRequest(AiModel $model, iterable $messages, ChatOptions $options, array $search, bool $stream): ChatRequest
+    protected function responsesRequest(ProviderModel $offer, iterable $messages, ChatOptions $options, array $search, bool $stream): ChatRequest
     {
         $tool = ['type' => 'web_search'];
         if ($search['max_uses'] && $options->maxWebSearches) {
@@ -103,10 +114,11 @@ abstract class AiProvider
         }
 
         $body = array_filter([
-            'model' => $this->modelId($model),
+            'model' => $this->modelId($offer),
             'input' => $this->formatMessages($messages),
-            'max_output_tokens' => $options->maxTokens,
-            'reasoning' => $options->reasoningEffort ? ['effort' => $options->reasoningEffort->value] : null,
+            'max_output_tokens' => $this->maxTokens($offer, $options),
+            'temperature' => $this->temperature($offer, $options),
+            'reasoning' => ($effort = $this->reasoningEffort($offer, $options)) ? ['effort' => $effort] : null,
             'stream' => $stream ?: null,
             'tools' => [$tool],
         ], fn ($value) => $value !== null);
@@ -126,7 +138,7 @@ abstract class AiProvider
      * @param  iterable<Message>  $messages
      * @param  array{format: string, max_uses: bool, domains: bool}  $search
      */
-    protected function messagesRequest(AiModel $model, iterable $messages, ChatOptions $options, array $search, bool $stream): ChatRequest
+    protected function messagesRequest(ProviderModel $offer, iterable $messages, ChatOptions $options, array $search, bool $stream): ChatRequest
     {
         $tool = ['type' => 'web_search_20250305', 'name' => 'web_search'];
         if ($search['max_uses'] && $options->maxWebSearches) {
@@ -137,9 +149,10 @@ abstract class AiProvider
         }
 
         $body = array_filter([
-            'model' => $this->modelId($model),
+            'model' => $this->modelId($offer),
             // В Messages лимит ответа обязателен
-            'max_tokens' => $options->maxTokens ?? 4096,
+            'max_tokens' => $this->maxTokens($offer, $options) ?? 4096,
+            'temperature' => $this->temperature($offer, $options),
             'messages' => $this->formatMessages($messages),
             'stream' => $stream ?: null,
             'tools' => [$tool],
@@ -159,9 +172,9 @@ abstract class AiProvider
      *
      * @param  iterable<Message>  $messages
      */
-    public function complete(AiModel $model, iterable $messages, ChatOptions $options = new ChatOptions): Completion
+    public function complete(ProviderModel $offer, iterable $messages, ChatOptions $options = new ChatOptions): Completion
     {
-        $request = $this->chatRequest($model, $messages, $options);
+        $request = $this->chatRequest($offer, $messages, $options);
 
         $data = Http::withHeaders($request->headers)
             ->timeout(120)
@@ -209,6 +222,36 @@ abstract class AiProvider
     }
 
     /**
+     * Лимит ответа не больше, чем модель вообще может выдать.
+     */
+    protected function maxTokens(ProviderModel $offer, ChatOptions $options): ?int
+    {
+        if ($options->maxTokens === null || $offer->max_output_tokens === null) {
+            return $options->maxTokens;
+        }
+
+        return min($options->maxTokens, $offer->max_output_tokens);
+    }
+
+    /**
+     * Температура — только если модель её принимает, и в её пределах.
+     */
+    protected function temperature(ProviderModel $offer, ChatOptions $options): ?float
+    {
+        $capability = $offer->capability(Capability::Temperature);
+        if ($options->temperature === null || ! $capability) {
+            return null;
+        }
+
+        return max((float) $capability->setting('min'), min((float) $capability->setting('max'), $options->temperature));
+    }
+
+    protected function reasoningEffort(ProviderModel $offer, ChatOptions $options): ?string
+    {
+        return $offer->supports(Capability::Reasoning) ? $options->reasoningEffort?->value : null;
+    }
+
+    /**
      * @return array<string, string>
      */
     protected function headers(): array
@@ -221,7 +264,7 @@ abstract class AiProvider
      *
      * @return array<string, mixed>
      */
-    protected function extraBody(AiModel $model, ChatOptions $options): array
+    protected function extraBody(ProviderModel $offer, ChatOptions $options, bool $stream): array
     {
         return [];
     }

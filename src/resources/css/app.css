@@ -150,18 +150,39 @@
     --tw-prose-invert-pre-bg: rgb(0 0 0 / 0.28);
     --tw-prose-invert-th-borders: rgb(255 255 255 / 0.2);
     --tw-prose-invert-td-borders: rgb(255 255 255 / 0.1);
-    font-size: 16px;
-    line-height: 1.7;
+    /* На телефоне плотнее — больше текста в экране */
+    font-size: 0.875rem;
+    line-height: 1.6;
+    @media (width >= 48rem) {
+        font-size: 16px;
+        line-height: 1.7;
+    }
 
     & > :first-child { margin-top: 0; }
     & > :last-child { margin-bottom: 0; }
 
     & :where(h1, h2, h3, h4) { font-weight: 500; }
-    & :where(h1) { font-size: 1.5em; }
-    & :where(h2) { font-size: 1.3em; margin-top: 1.4em; margin-bottom: 0.6em; }
-    & :where(h3) { font-size: 1.12em; margin-top: 1.2em; margin-bottom: 0.5em; }
+    & :where(h1) { font-size: 1.4em; }
+    & :where(h2) { font-size: 1.2em; margin-top: 1.3em; margin-bottom: 0.5em; }
+    & :where(h3) { font-size: 1.07em; margin-top: 1.1em; margin-bottom: 0.4em; }
+    @media (width >= 48rem) {
+        & :where(h1) { font-size: 1.5em; }
+        & :where(h2) { font-size: 1.3em; margin-top: 1.4em; margin-bottom: 0.6em; }
+        & :where(h3) { font-size: 1.12em; margin-top: 1.2em; margin-bottom: 0.5em; }
+    }
     & :where(p, ul, ol) { margin-top: 0.6em; margin-bottom: 0.6em; }
     & :where(li) { margin-top: 0.2em; margin-bottom: 0.2em; }
+
+    /* Пункты, вложенные списки и цитаты — ближе к левому краю: у плагина отступы под книжную вёрстку */
+    & :where(ul, ol) { padding-inline-start: 1.05em; }
+    & :where(li) { padding-inline-start: 0.15em; }
+    & :where(li > ul, li > ol) { margin-top: 0.25em; margin-bottom: 0.25em; }
+    & :where(blockquote) { padding-inline-start: 0.7em; }
+    @media (width >= 48rem) {
+        & :where(ul, ol) { padding-inline-start: 1.3em; }
+        & :where(li) { padding-inline-start: 0.25em; }
+        & :where(blockquote) { padding-inline-start: 0.9em; }
+    }
 
     /* Инлайн-код — плашкой, без обратных кавычек плагина */
     & :where(code):not(:where(pre code)) {
@@ -177,6 +198,10 @@
         border: 1px solid rgb(255 255 255 / 0.08);
         border-radius: 0.9rem;
         font-size: 0.88em;
+        padding: 0.7em 0.8em;
+        @media (width >= 48rem) {
+            padding: 0.85em 1.1em;
+        }
     }
     /* Без :where — CSS темы highlight.js грузится позже и иначе перебивает фон (двойная рамка) */
     & pre code.hljs { background: transparent; padding: 0; }

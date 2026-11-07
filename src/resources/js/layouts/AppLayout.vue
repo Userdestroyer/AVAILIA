@@ -61,7 +61,7 @@ const deleteChat = async (id) => {
         <div v-if="!isDesktop && sidebarOpen" class="fixed inset-0 z-40 bg-black/30 backdrop-blur-md" @click="sidebarOpen = false" />
     </Transition>
 
-    <div class="flex h-dvh gap-6 p-4 md:p-6">
+    <div class="flex h-dvh gap-6 p-2 md:p-6">
         <!-- На месте (md+) — матовость из шейдера; шторкой поверх контента — настоящее размытие -->
         <aside
             v-frost="isDesktop"

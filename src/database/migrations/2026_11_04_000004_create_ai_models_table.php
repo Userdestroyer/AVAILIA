@@ -12,17 +12,12 @@ return new class extends Migration
             $table->id();
             $table->foreignId('vendor_id')->constrained()->restrictOnDelete();
             $table->string('type');
-            // Идентификатор модели в API вендора, например gpt-5 или claude-sonnet-5-5
+            // Наш идентификатор модели (у провайдеров свои — provider_models.external_id)
             $table->string('slug');
             $table->string('name');
             $table->text('description')->nullable();
             $table->unsignedInteger('context_window')->nullable();
-            // Цены за 1M токенов в валюте провайдера (proxyapi — рубли)
-            $table->decimal('price_input', 12, 4)->default(0);
-            $table->decimal('price_output', 12, 4)->default(0);
-            $table->decimal('price_cache_read', 12, 4)->nullable();
-            $table->decimal('price_cache_write', 12, 4)->nullable();
-            $table->char('price_currency', 3)->default('USD');
+            // Цены — не здесь: у каждого провайдера свои (provider_models)
             $table->boolean('is_active')->default(true);
             $table->unsignedSmallInteger('sort')->default(0);
             $table->timestamps();

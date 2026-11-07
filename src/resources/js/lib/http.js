@@ -8,6 +8,10 @@ export function postJson(url, body) {
     return requestJson('POST', url, body);
 }
 
+export function putJson(url, body) {
+    return requestJson('PUT', url, body);
+}
+
 export function patchJson(url, body) {
     return requestJson('PATCH', url, body);
 }

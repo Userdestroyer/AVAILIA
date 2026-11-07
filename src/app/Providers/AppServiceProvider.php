@@ -3,12 +3,10 @@
 namespace App\Providers;
 
 use App\Models\User;
-use App\Services\Ai\AiProvider;
-use App\Services\Ai\ProxyApiProvider;
+use App\Services\Ai\ProviderRegistry;
 use Illuminate\Http\Middleware\TrustProxies;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
-use InvalidArgumentException;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -17,15 +15,8 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        $this->app->singleton(AiProvider::class, function () {
-            $name = config('ai.provider');
-            $config = config("ai.providers.{$name}");
-
-            return match ($name) {
-                'proxyapi' => new ProxyApiProvider($config['url'], $config['key']),
-                default => throw new InvalidArgumentException("Неизвестный AI-провайдер: {$name}"),
-            };
-        });
+        // Один на запрос: кэширует активного провайдера и экземпляры классов провайдеров
+        $this->app->scoped(ProviderRegistry::class);
     }
 
     /**

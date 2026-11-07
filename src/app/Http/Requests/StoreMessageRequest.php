@@ -44,11 +44,12 @@ class StoreMessageRequest extends FormRequest
             ],
             'max_tokens' => ['nullable', 'integer', 'between:256,32768'],
             'web_search' => ['boolean'],
-            // Поиск дорогой (каждый ~1 ₽ + найденные страницы как ввод) — не больше 5 за ответ
-            'max_web_searches' => ['nullable', 'integer', 'between:1,5'],
+            // Поиск платный (каждый 0,5–1,5 ₽ + найденные страницы как ввод) — не больше 20 за ответ
+            'max_web_searches' => ['nullable', 'integer', 'between:1,20'],
             'allowed_domains' => ['nullable', 'array', 'max:10'],
             'allowed_domains.*' => ['string', 'regex:/^[a-z0-9-]+(\.[a-z0-9-]+)+$/'],
             'reasoning_effort' => ['nullable', Rule::enum(ReasoningEffort::class)],
+            'temperature' => ['nullable', 'numeric', 'between:0,2'],
         ];
     }
 }

@@ -45,11 +45,16 @@ class MessageResource extends JsonResource
     }
 
     /**
-     * Себестоимость в валюте владельца чата; без курса — в исходной валюте.
+     * Себестоимость в валюте владельца чата; без курса — в исходной валюте; неизвестна — null.
      */
-    private function cost(): array
+    private function cost(): ?array
     {
-        $currency = $this->chat->user->currency;
+        // Расценок не было, а провайдер стоимость не сообщил — не показываем
+        if ($this->cost === null) {
+            return null;
+        }
+
+        $currency = $this->chat?->user?->currency ?? 'RUB';
 
         try {
             return ['amount' => $this->costIn($currency), 'currency' => $currency];

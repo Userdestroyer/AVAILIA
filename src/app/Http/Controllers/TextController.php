@@ -5,8 +5,9 @@ namespace App\Http\Controllers;
 use App\Enums\AiModelType;
 use App\Http\Resources\MessageResource;
 use App\Models\Chat;
+use App\Models\ProviderModel;
 use App\Models\Vendor;
-use App\Services\Ai\AiProvider;
+use App\Services\Ai\ProviderRegistry;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response as HttpResponse;
 use Inertia\Inertia;
@@ -14,6 +15,8 @@ use Inertia\Response;
 
 class TextController extends Controller
 {
+    public function __construct(private ProviderRegistry $providers) {}
+
     public function index(): Response
     {
         return $this->render();
@@ -49,35 +52,52 @@ class TextController extends Controller
     }
 
     /**
-     * @return array{max_uses: bool, domains: bool}|null
+     * Вендоры и их модели, доступные у активного провайдера, — с его расценками
+     * (любая может быть пустой: модель выбирается, стоимость тогда от провайдера или неизвестна).
      */
-    private function webSearchSupport(Vendor $vendor): ?array
-    {
-        $support = app(AiProvider::class)->webSearch($vendor->models->first()->setRelation('vendor', $vendor));
-
-        return $support ? ['max_uses' => $support['max_uses'], 'domains' => $support['domains']] : null;
-    }
-
     private function vendors()
     {
+        $provider = $this->providers->provider($this->providers->activeSlug());
+        $offers = $this->providers->active()->offerings()->where('is_active', true)->with('capabilities')->get()->keyBy('ai_model_id');
+
         return Vendor::where('is_active', true)
             ->orderBy('sort')
             ->with(['models' => fn ($query) => $query
                 ->where('type', AiModelType::Text)
                 ->where('is_active', true)
+                ->whereIn('id', $offers->keys())
                 ->orderBy('sort'),
             ])
             ->get()
             ->filter(fn (Vendor $vendor) => $vendor->models->isNotEmpty())
-            ->map(fn (Vendor $vendor) => [
-                'slug' => $vendor->slug,
-                'product' => $vendor->product ?? $vendor->name,
-                // Что вендор умеет в поиске у текущего агрегатора: {max_uses, domains} или null
-                'web_search' => $this->webSearchSupport($vendor),
-                'models' => $vendor->models->map->only(
-                    'id', 'name', 'description', 'price_input', 'price_output', 'price_currency',
-                ),
-            ])
+            ->map(function (Vendor $vendor) use ($offers, $provider) {
+                $first = $offers[$vendor->models->first()->id]->setRelation('aiModel', $vendor->models->first()->setRelation('vendor', $vendor));
+                $search = $provider->webSearch($first);
+
+                return [
+                    'slug' => $vendor->slug,
+                    'product' => $vendor->product ?? $vendor->name,
+                    // Что вендор умеет в поиске у текущего провайдера: {max_uses, domains} или null
+                    'web_search' => $search ? ['max_uses' => $search['max_uses'], 'domains' => $search['domains']] : null,
+                    'models' => $vendor->models->map(fn ($model) => [
+                        ...$model->only('id', 'name', 'description'),
+                        ...$this->prices($offers[$model->id]),
+                        // Что модель умеет у провайдера и в каких пределах: {temperature: {min, max}, reasoning: {}, …}
+                        'capabilities' => (object) $offers[$model->id]->capabilities
+                            ->mapWithKeys(fn ($row) => [$row->capability->value => (object) $row->limits()])
+                            ->all(),
+                    ]),
+                ];
+            })
             ->values();
+    }
+
+    private function prices(ProviderModel $offer): array
+    {
+        return [
+            'price_input' => $offer->price_input,
+            'price_output' => $offer->price_output,
+            'price_currency' => $offer->price_currency,
+        ];
     }
 }
