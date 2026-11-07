@@ -7,13 +7,14 @@
 <html lang="{{ str_replace('_', '-', app()->getLocale()) }}" data-theme="{{ $theme }}">
     <head>
         <meta charset="utf-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1">
+        {{-- resizes-content: клавиатура на Android сжимает экран, а не сдвигает страницу — поле ввода остаётся над ней --}}
+        <meta name="viewport" content="width=device-width, initial-scale=1, interactive-widget=resizes-content">
 
         @fonts
         @vite(['resources/css/app.css', 'resources/js/app.js'])
         @inertiaHead
     </head>
-    <body class="min-h-screen antialiased">
+    <body class="min-h-dvh antialiased">
         @inertia
     </body>
 </html>

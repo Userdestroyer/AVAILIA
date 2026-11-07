@@ -4,6 +4,10 @@ function xsrfToken() {
     return match ? decodeURIComponent(match[1]) : '';
 }
 
+export function getJson(url) {
+    return requestJson('GET', url);
+}
+
 export function postJson(url, body) {
     return requestJson('POST', url, body);
 }

@@ -32,6 +32,11 @@ class MessageResource extends JsonResource
             'cost' => $isAnswer && $this->status === MessageStatus::Done ? $this->cost() : null,
             // Поиски модели — пузырьки над ответом
             'searches' => $isAnswer ? ($this->search_log ?? []) : [],
+            // Какие картриджи ушли с вопросом — пластинки над ним
+            'context' => $isAnswer ? [] : array_map(
+                fn (array $entry) => ['plate_id' => $entry['plate_id'], 'title' => $entry['title']],
+                $this->context ?? [],
+            ),
         ];
     }
 

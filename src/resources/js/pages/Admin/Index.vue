@@ -1,6 +1,6 @@
 <script setup>
-import { Head } from '@inertiajs/vue3';
-import { Boxes, Check, KeyRound, Plus, RefreshCw, Server, X } from 'lucide-vue-next';
+import { Deferred, Head } from '@inertiajs/vue3';
+import { Boxes, Check, Gauge, KeyRound, Plus, RefreshCw, Server, X } from 'lucide-vue-next';
 import { computed, reactive, ref } from 'vue';
 import AppLayout from '@/layouts/AppLayout.vue';
 import GlassToggle from '@/components/GlassToggle.vue';
@@ -16,11 +16,15 @@ const props = defineProps({
     vendors: { type: Array, required: true },
     models: { type: Array, required: true },
     capabilities: { type: Array, required: true },
+    serviceModel: { type: Number, default: null },
+    // Догружается после открытия страницы
+    speed: { type: Object, default: null },
 });
 
 const SECTIONS = [
     { key: 'provider', label: 'Провайдер', icon: Server },
     { key: 'models', label: 'Модели и цены', icon: Boxes },
+    { key: 'speed', label: 'Скорость', icon: Gauge },
 ];
 const section = ref('provider');
 const notice = ref(null);
@@ -44,6 +48,25 @@ const activate = async (slug) => {
         flash(e.message, true);
     }
 };
+
+// Сервисная модель: фоновые задачи (название чата и т.п.) — только подключённые у активного провайдера
+const serviceModel = ref(props.serviceModel);
+const serviceCandidates = computed(() => props.models.filter((m) => m.is_active && m.offerings[active.value]?.is_active));
+const chooseServiceModel = async (id) => {
+    const previous = serviceModel.value;
+    serviceModel.value = id;
+    try {
+        await putJson('/admin/service-model', { ai_model_id: id });
+    } catch (e) {
+        serviceModel.value = previous;
+        flash(e.message, true);
+    }
+};
+
+// ── Скорость ───────────────────────────────────────────
+const ms = (value) => (value === null || value === undefined ? '—' : value >= 1000 ? `${(value / 1000).toFixed(1)} с` : `${value} мс`);
+const PURPOSES = { chat_title: 'Название чата' };
+const money = (cost) => Object.entries(cost).map(([currency, amount]) => `${Number(amount).toFixed(2)} ${currency === 'RUB' ? '₽' : currency}`).join(' + ') || '—';
 
 // ── Модели и цены ──────────────────────────────────────
 const tab = ref(props.activeProvider);
@@ -206,6 +229,94 @@ const providerName = computed(() => props.providers.find((p) => p.slug === tab.v
                             </div>
                         </button>
                     </div>
+
+                    <div class="glass-inset space-y-2 rounded-2xl p-4">
+                        <div class="flex flex-wrap items-center justify-between gap-3">
+                            <div>
+                                <div class="text-[15px]">Сервисная модель</div>
+                                <p class="mt-0.5 text-sm text-white/55">Фоновые задачи: название чата, дальше — теги, подбор картриджей, диффы. Быстрая и дешёвая.</p>
+                            </div>
+                            <select
+                                :value="serviceModel"
+                                class="glass-inset rounded-xl px-3 py-2 text-sm outline-none"
+                                @change="chooseServiceModel(Number($event.target.value))"
+                            >
+                                <option v-for="m in serviceCandidates" :key="m.id" :value="m.id" class="bg-[#2c3445]">{{ m.name }}</option>
+                            </select>
+                        </div>
+                        <p v-if="serviceModel && !serviceCandidates.some((m) => m.id === serviceModel)" class="text-xs text-hot-soft">
+                            Выбранная модель не подключена у активного провайдера — фоновые задачи сейчас не выполняются.
+                        </p>
+                    </div>
+                </section>
+
+                <!-- Скорость -->
+                <section v-else-if="section === 'speed'" class="max-w-5xl space-y-4">
+                    <header>
+                        <h2 class="text-2xl font-light">Скорость</h2>
+                        <p class="mt-1 text-sm text-white/55">
+                            TTFT — время до первого видимого токена. «Гейтвей» — от подключения к стриму, «Человек» — от нажатия
+                            «Отправить» до токена на экране: разница — накладные расходы на нашей стороне.
+                        </p>
+                    </header>
+
+                    <Deferred data="speed">
+                        <template #fallback>
+                            <p class="text-sm text-white/45">Считаю…</p>
+                        </template>
+
+                        <p class="text-xs text-white/45">За {{ speed.days }} дней, медиана и p90</p>
+                        <div class="overflow-x-auto">
+                            <table class="w-full min-w-[44rem] text-sm tabular-nums">
+                                <thead class="text-left text-xs text-white/45">
+                                    <tr>
+                                        <th class="py-2 pr-3 font-normal">Модель</th>
+                                        <th class="py-2 pr-3 font-normal">Ответов</th>
+                                        <th class="py-2 pr-3 font-normal">TTFT гейтвей</th>
+                                        <th class="py-2 pr-3 font-normal">TTFT человек</th>
+                                        <th class="py-2 pr-3 font-normal">Генерация</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr v-for="row in speed.models" :key="row.provider + row.model" class="border-t border-white/6">
+                                        <td class="py-2 pr-3">{{ row.model }} <span class="text-xs text-white/40">· {{ row.provider }}</span></td>
+                                        <td class="py-2 pr-3">{{ row.count }}</td>
+                                        <td class="py-2 pr-3">{{ ms(row.ttft_p50) }} <span class="text-white/40">/ {{ ms(row.ttft_p90) }}</span></td>
+                                        <td class="py-2 pr-3">{{ ms(row.client_p50) }} <span class="text-white/40">/ {{ ms(row.client_p90) }}</span></td>
+                                        <td class="py-2 pr-3">{{ ms(row.duration_p50) }}</td>
+                                    </tr>
+                                    <tr v-if="!speed.models.length">
+                                        <td colspan="5" class="py-3 text-white/45">Замеров пока нет — появятся с новыми ответами.</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <h3 class="pt-4 text-lg font-light">Фоновые вызовы</h3>
+                        <table class="w-full max-w-2xl text-sm tabular-nums">
+                            <thead class="text-left text-xs text-white/45">
+                                <tr>
+                                    <th class="py-2 pr-3 font-normal">Задача</th>
+                                    <th class="py-2 pr-3 font-normal">Вызовов</th>
+                                    <th class="py-2 pr-3 font-normal">Ошибок</th>
+                                    <th class="py-2 pr-3 font-normal">Расход</th>
+                                    <th class="py-2 pr-3 font-normal">Время</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr v-for="row in speed.service" :key="row.purpose" class="border-t border-white/6">
+                                    <td class="py-2 pr-3">{{ PURPOSES[row.purpose] ?? row.purpose }}</td>
+                                    <td class="py-2 pr-3">{{ row.count }}</td>
+                                    <td class="py-2 pr-3" :class="{ 'text-hot-soft': row.failed }">{{ row.failed }}</td>
+                                    <td class="py-2 pr-3">{{ money(row.cost) }}</td>
+                                    <td class="py-2 pr-3">{{ ms(row.duration_p50) }}</td>
+                                </tr>
+                                <tr v-if="!speed.service.length">
+                                    <td colspan="5" class="py-3 text-white/45">Фоновых вызовов пока не было.</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </Deferred>
                 </section>
 
                 <!-- Модели и цены -->

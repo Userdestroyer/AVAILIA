@@ -50,6 +50,9 @@ class StoreMessageRequest extends FormRequest
             'allowed_domains.*' => ['string', 'regex:/^[a-z0-9-]+(\.[a-z0-9-]+)+$/'],
             'reasoning_effort' => ['nullable', Rule::enum(ReasoningEffort::class)],
             'temperature' => ['nullable', 'numeric', 'between:0,2'],
+            // Картриджи контекста; чужие id просто не найдутся — выборка идёт по владельцу
+            'plate_ids' => ['nullable', 'array', 'max:30'],
+            'plate_ids.*' => ['integer'],
         ];
     }
 }

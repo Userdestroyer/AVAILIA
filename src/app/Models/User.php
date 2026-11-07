@@ -64,6 +64,16 @@ class User extends Authenticatable
         return $this->hasMany(Chat::class);
     }
 
+    public function plates(): HasMany
+    {
+        return $this->hasMany(ContextPlate::class);
+    }
+
+    public function tags(): HasMany
+    {
+        return $this->hasMany(Tag::class);
+    }
+
     public function messages(): HasManyThrough
     {
         return $this->hasManyThrough(Message::class, Chat::class);

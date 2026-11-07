@@ -50,7 +50,7 @@ Commands:
   go <args...>        go ... в контейнере gateway (go get, go test ./... и т.д.)
   shell [service]     Войти в bash контейнера (по умолчанию php)
   install             Первичная установка (composer, npm, миграции, справочники, курсы, суперюзер)
-  update              Обновление (pull + install deps + migrate + cache)
+  update              Обновление (deps + migrate + справочники + cache + перезапуск воркера)
   migrate             Запустить миграции
   fresh               Снести БД и накатить миграции + сиды (ОПАСНО)
   build               Пересобрать образы без запуска
@@ -164,15 +164,20 @@ case "$CMD" in
             $DC run --rm npm ci
             $DC run --rm npm run build
             $EXEC php php artisan migrate --force
+            # Справочники идемпотентны — новые модели, возможности и т.п. доезжают при каждом обновлении
+            $EXEC php php artisan db:seed --force
             $EXEC php php artisan config:cache
             $EXEC php php artisan route:cache
             $EXEC php php artisan view:cache
+            # Воркер держит старый код в памяти — перезапускаем
+            $EXEC php php artisan queue:restart
         else
             $DC run --rm gateway go mod download
             $EXEC php composer install
             $DC run --rm npm install
             $DC run --rm npm run build
             $EXEC php php artisan migrate
+            $EXEC php php artisan db:seed
             $EXEC php php artisan config:clear
             $EXEC php php artisan route:clear
             $EXEC php php artisan view:clear

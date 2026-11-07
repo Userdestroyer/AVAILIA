@@ -20,6 +20,9 @@ type Result struct {
 	WebSearches int    `json:"web_searches"`
 	Searches    any    `json:"searches,omitempty"`
 	Error       string `json:"error,omitempty"`
+	// Скорость: до первого видимого токена (текст или поиск) и генерация целиком, мс
+	TTFTMs     int64 `json:"ttft_ms,omitempty"`
+	DurationMs int64 `json:"duration_ms"`
 }
 
 type Client struct {

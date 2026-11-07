@@ -16,6 +16,9 @@ enum Capability: string
     case Images = 'images';
     // Файлы (PDF и т.п.) во входных сообщениях
     case Files = 'files';
+    // Поиск в интернете; settings: {max_uses, domains} — соблюдает ли лимит поисков и список сайтов.
+    // Формат запроса с поиском — знание провайдера (AiProvider::searchFormat)
+    case WebSearch = 'web_search';
 
     public function label(): string
     {
@@ -24,6 +27,7 @@ enum Capability: string
             self::Reasoning => 'Рассуждения',
             self::Images => 'Картинки',
             self::Files => 'Файлы',
+            self::WebSearch => 'Поиск',
         };
     }
 
@@ -36,6 +40,7 @@ enum Capability: string
     {
         return match ($this) {
             self::Temperature => ['min' => 0, 'max' => 2],
+            self::WebSearch => ['max_uses' => true, 'domains' => true],
             default => [],
         };
     }

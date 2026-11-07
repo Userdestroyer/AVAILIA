@@ -142,7 +142,14 @@ func (h *Handler) generate(j job, provider config.Provider, events chan<- event,
 	ctx, cancel := context.WithTimeout(context.Background(), generationTimeout)
 	defer cancel()
 
+	// Отсчёт — от подключения браузера к стриму; рассуждения не в счёт: их на экране не видно
+	started := time.Now()
+	var firstVisible time.Time
+
 	res, err := h.callProvider(ctx, j, provider, func(c Chunk) {
+		if firstVisible.IsZero() && (c.Kind == "delta" || c.Kind == "search") {
+			firstVisible = time.Now()
+		}
 		if c.Search != nil {
 			send(event{Name: "search", Data: c.Search})
 			return
@@ -157,6 +164,10 @@ func (h *Handler) generate(j job, provider config.Provider, events chan<- event,
 		Usage:       res.Usage,
 		WebSearches: res.WebSearches,
 		Searches:    res.Searches,
+		DurationMs:  time.Since(started).Milliseconds(),
+	}
+	if !firstVisible.IsZero() {
+		result.TTFTMs = firstVisible.Sub(started).Milliseconds()
 	}
 	if err != nil {
 		slog.Warn("generation failed", "message_id", j.MessageID, "err", err)

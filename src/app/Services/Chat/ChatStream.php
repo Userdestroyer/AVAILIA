@@ -3,9 +3,11 @@
 namespace App\Services\Chat;
 
 use App\Enums\MessageRole;
+use App\Jobs\GenerateChatTitle;
 use App\Enums\MessageStatus;
 use App\Models\AiModel;
 use App\Models\Chat;
+use App\Models\ContextPlate;
 use App\Models\Message;
 use App\Models\ProviderModel;
 use App\Models\User;
@@ -28,21 +30,34 @@ class ChatStream
 
     /**
      * @param  Collection<int, ProviderModel>  $offers  предложения моделей у провайдера, в порядке выбора юзера
+     * @param  Collection<int, ContextPlate>  $plates  подключённые картриджи — уже только свои (отобраны по владельцу)
      * @return array{chat: Chat, userMessage: Message, answers: list<array{message: Message, token: string}>}
      */
-    public function start(User $user, ?Chat $chat, Collection $offers, string $content, ChatOptions $options): array
+    public function start(User $user, ?Chat $chat, Collection $offers, string $content, ChatOptions $options, ?Collection $plates = null): array
     {
-        [$chat, $userMessage, $answers] = DB::transaction(function () use ($user, $chat, $offers, $content) {
+        $isNew = $chat === null;
+        $plates ??= collect();
+
+        [$chat, $userMessage, $answers] = DB::transaction(function () use ($user, $chat, $offers, $content, $plates) {
             $primary = $offers->first()->aiModel;
 
             if ($chat) {
                 $chat->update(['ai_model_id' => $primary->id]);
                 $chat->touch();
             } else {
-                $chat = $user->chats()->create(['ai_model_id' => $primary->id, 'title' => Str::limit($content, 60)]);
+                $chat = $user->chats()->create(['ai_model_id' => $primary->id, 'title' => GenerateChatTitle::fallback($content)]);
             }
 
-            $userMessage = $chat->messages()->create(['role' => MessageRole::User, 'content' => $content]);
+            $userMessage = $chat->messages()->create([
+                'role' => MessageRole::User,
+                'content' => $content,
+                // Что именно (какие версии) ушло в модель вместе с вопросом
+                'context' => $plates->isEmpty() ? null : $plates->map(fn (ContextPlate $plate) => [
+                    'plate_id' => $plate->id,
+                    'version_id' => $plate->current_version_id,
+                    'title' => $plate->title,
+                ])->values()->all(),
+            ]);
 
             $answers = $offers->map(fn (ProviderModel $offer) => $chat->messages()->create([
                 'parent_id' => $userMessage->id,
@@ -55,13 +70,21 @@ class ChatStream
             return [$chat, $userMessage, $answers];
         });
 
+        // Название — фоном, параллельно ответу: постановка в очередь — это одна запись в Redis
+        if ($isNew) {
+            GenerateChatTitle::dispatch($chat->id, $content);
+        }
+
         $conversation = $chat->messages()->where('id', '<=', $userMessage->id)->orderBy('id')->get();
         $redis = Redis::connection('gateway');
+        // Картриджи — системным сообщением в начале: одинаковое начало у всех моделей и ходов
+        $system = ContextPrompt::build($plates);
+        $preamble = $system ? collect([new Message(['role' => MessageRole::System, 'content' => $system])]) : collect();
 
-        $started = $answers->map(function (Message $answer) use ($offers, $conversation, $options, $redis) {
+        $started = $answers->map(function (Message $answer) use ($offers, $conversation, $options, $redis, $preamble) {
             $offer = $offers->firstWhere('ai_model_id', $answer->ai_model_id);
             $provider = $this->providers->provider($offer->provider->slug);
-            $request = $provider->request($offer, $this->historyFor($conversation, $offer->aiModel), $options);
+            $request = $provider->request($offer, $preamble->concat($this->historyFor($conversation, $offer->aiModel)), $options);
 
             // Ключ провайдера сюда не кладём — он есть у гейтвея; кладём только тело запроса
             $token = Str::random(48);
@@ -109,7 +132,7 @@ class ChatStream
     /**
      * Гейтвей сообщил итог стрима: сохраняем текст, токены и себестоимость.
      *
-     * @param  array{status: string, format?: ?string, content?: ?string, usage?: ?array, web_searches?: ?int, searches?: ?array, error?: ?string}  $result
+     * @param  array{status: string, format?: ?string, content?: ?string, usage?: ?array, web_searches?: ?int, searches?: ?array, error?: ?string, ttft_ms?: ?int, duration_ms?: ?int}  $result
      */
     public function complete(Message $message, array $result): Message
     {
@@ -118,8 +141,11 @@ class ChatStream
             return $message;
         }
 
+        $speed = ['ttft_ms' => $result['ttft_ms'] ?? null, 'duration_ms' => $result['duration_ms'] ?? null];
+
         if ($result['status'] === MessageStatus::Failed->value) {
             $message->update([
+                ...$speed,
                 'status' => MessageStatus::Failed,
                 'content' => $result['content'] ?? null,
                 'error' => $result['error'] ?? 'Модель не ответила',
@@ -141,6 +167,7 @@ class ChatStream
             ?? $offer?->calculateCost($usage->input, $usage->output, $usage->cacheRead, $usage->cacheWrite, $searches);
 
         $message->update([
+            ...$speed,
             'status' => MessageStatus::Done,
             'content' => $result['content'] ?? '',
             'input_tokens' => $usage->input,

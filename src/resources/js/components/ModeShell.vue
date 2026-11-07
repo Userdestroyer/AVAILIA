@@ -1,5 +1,6 @@
 <script setup>
-import { Menu } from 'lucide-vue-next';
+import { Link } from '@inertiajs/vue3';
+import { Menu, Plus } from 'lucide-vue-next';
 import ModeSwitcher from '@/components/ModeSwitcher.vue';
 import { useSidebar } from '@/composables/useSidebar';
 
@@ -23,7 +24,7 @@ const sidebarOpen = useSidebar();
                 class="flex min-h-0 w-full flex-1 flex-col gap-2 md:gap-3"
                 :class="wide ? '' : 'max-w-[55rem] xl:ml-[min(6rem,max(0px,100cqw_-_55rem))]'"
             >
-                <!-- Верхняя строка: ☰ (мобильный) · режимы · действия страницы — ничего не налезает -->
+                <!-- Верхняя строка: ☰ и новый чат (мобильный) · режимы · действия страницы — ничего не налезает -->
                 <div class="flex items-center gap-2">
                     <button
                         v-frost
@@ -32,8 +33,18 @@ const sidebarOpen = useSidebar();
                         title="Чаты"
                         @click="sidebarOpen = true"
                     >
-                        <Menu class="size-5" :stroke-width="1.5" />
+                        <Menu class="vein size-5" :stroke-width="1.5" />
                     </button>
+                    <!-- На десктопе новый чат — в боковой панели -->
+                    <Link
+                        v-frost
+                        href="/text"
+                        :prefetch="['mount', 'hover']"
+                        class="glass shrink-0 rounded-full p-2 md:hidden"
+                        title="Новый чат"
+                    >
+                        <Plus class="vein size-5" :stroke-width="1.5" />
+                    </Link>
                     <ModeSwitcher class="min-w-0 flex-1" />
                     <slot name="actions" />
                 </div>

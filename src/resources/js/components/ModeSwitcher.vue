@@ -58,7 +58,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', place));
                 :class="index === active ? 'text-white' : 'text-white/60 hover:text-white'"
                 @click="choose(index)"
             >
-                <component :is="mode.icon" class="size-4" :stroke-width="1.5" />
+                <component :is="mode.icon" class="size-4" :class="{ vein: index !== active }" :stroke-width="1.5" />
                 {{ mode.label }}
             </Link>
         </div>

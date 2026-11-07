@@ -24,7 +24,7 @@ class GatewayCompleteTest extends TestCase
     protected bool $seed = true;
 
     #[Group('D1')]
-    #[TestDox('Без секрета гейтвея — 403; с секретом ответ сохраняется с себестоимостью по usage, повтор ничего не меняет')]
+    #[TestDox('Без секрета гейтвея — 403; с секретом ответ сохраняется с себестоимостью по usage и скоростью, повтор ничего не меняет')]
     public function test_gateway_completes_answer_with_cost(): void
     {
         config(['ai.gateway.secret' => 'gateway-secret']);
@@ -36,6 +36,8 @@ class GatewayCompleteTest extends TestCase
             'status' => 'done',
             'content' => 'Ответ',
             'usage' => ['prompt_tokens' => 1200, 'completion_tokens' => 350, 'prompt_tokens_details' => ['cached_tokens' => 200]],
+            'ttft_ms' => 640,
+            'duration_ms' => 5200,
         ];
 
         $this->postJson($url, $result, ['X-Gateway-Secret' => 'wrong'])->assertForbidden();
@@ -49,6 +51,7 @@ class GatewayCompleteTest extends TestCase
         $answer->refresh();
         $this->assertSame([1000, 350, 200], [$answer->input_tokens, $answer->output_tokens, $answer->cache_read_tokens]);
         $this->assertSame(['4.66100000', 'RUB'], [$answer->cost, $answer->cost_currency]);
+        $this->assertSame([640, 5200], [$answer->ttft_ms, $answer->duration_ms]);
 
         $this->postJson($url, ['status' => 'failed', 'error' => 'late'], ['X-Gateway-Secret' => 'gateway-secret'])->assertOk();
         $this->assertSame(MessageStatus::Done, $answer->fresh()->status);

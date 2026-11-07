@@ -13,14 +13,13 @@ class ProxyApiProvider extends AiProvider
     /**
      * Поиск в интернете у proxyapi (проверено запросами, 2026-11-07): в chat/completions его нет.
      * Claude — родной Messages: только там соблюдаются max_uses и allowed_domains
-     * (через Responses proxyapi их принимает, но игнорирует). GPT и Gemini — Responses:
-     * у GPT нет лимита поисков, но работает filters.allowed_domains; Gemini принимает max_uses,
-     * доменов не поддерживает. У Grok поиска нет.
+     * (через Responses proxyapi их принимает, но игнорирует). GPT и Gemini — Responses.
+     * У Grok поиска нет. Что соблюдает каждая модель — в её возможности web_search (сидер).
      */
-    private const WEB_SEARCH = [
-        'anthropic' => ['format' => ChatRequest::FORMAT_MESSAGES, 'max_uses' => true, 'domains' => true],
-        'openai' => ['format' => ChatRequest::FORMAT_RESPONSES, 'max_uses' => false, 'domains' => true],
-        'google' => ['format' => ChatRequest::FORMAT_RESPONSES, 'max_uses' => true, 'domains' => false],
+    private const SEARCH_FORMATS = [
+        'anthropic' => ChatRequest::FORMAT_MESSAGES,
+        'openai' => ChatRequest::FORMAT_RESPONSES,
+        'google' => ChatRequest::FORMAT_RESPONSES,
     ];
 
     public function name(): string
@@ -28,8 +27,8 @@ class ProxyApiProvider extends AiProvider
         return 'proxyapi';
     }
 
-    public function webSearch(ProviderModel $offer): ?array
+    protected function searchFormat(ProviderModel $offer): ?string
     {
-        return self::WEB_SEARCH[$offer->aiModel->vendor->slug] ?? null;
+        return self::SEARCH_FORMATS[$offer->aiModel->vendor->slug] ?? null;
     }
 }

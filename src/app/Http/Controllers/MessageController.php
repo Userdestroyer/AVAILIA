@@ -39,6 +39,22 @@ class MessageController extends Controller
         return response()->noContent();
     }
 
+    /**
+     * Браузер сообщает, когда увидел первый токен (от нажатия «Отправить») — скорость глазами человека.
+     * Пишется один раз: повтор не перезапишет первое измерение.
+     */
+    public function metrics(Request $request, Message $message): Response
+    {
+        abort_unless($message->chat?->user_id === $request->user()->id && $message->role === MessageRole::Assistant, 404);
+        $validated = $request->validate(['client_ttft_ms' => ['required', 'integer', 'min:0', 'max:600000']]);
+
+        if ($message->client_ttft_ms === null) {
+            $message->update($validated);
+        }
+
+        return response()->noContent();
+    }
+
     public function store(StoreMessageRequest $request, ChatStream $stream, ProviderRegistry $providers): JsonResponse
     {
         $user = $request->user();
@@ -61,6 +77,14 @@ class MessageController extends Controller
         // Чужой или несуществующий чат — 404, а не новый чат
         $chat = $request->filled('chat_id') ? $user->chats()->findOrFail($request->input('chat_id')) : null;
 
+        // Только свои картриджи: фильтр по владельцу — в самом запросе, чужой id сюда не попадёт
+        $plates = $user->plates()
+            ->whereIn('id', $request->input('plate_ids') ?? [])
+            ->with('tags')
+            ->orderBy('sort')
+            ->orderBy('id')
+            ->get();
+
         $started = $stream->start(
             $user,
             $chat,
@@ -75,6 +99,7 @@ class MessageController extends Controller
                 maxWebSearches: $request->input('max_web_searches'),
                 allowedDomains: $request->input('allowed_domains') ?? [],
             ),
+            $plates,
         );
 
         return response()->json([

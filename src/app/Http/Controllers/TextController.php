@@ -3,11 +3,16 @@
 namespace App\Http\Controllers;
 
 use App\Enums\AiModelType;
+use App\Enums\Capability;
+use App\Enums\MessageRole;
+use App\Models\ContextPlate;
 use App\Http\Resources\MessageResource;
 use App\Models\Chat;
 use App\Models\ProviderModel;
 use App\Models\Vendor;
+use App\Services\Ai\AiProvider;
 use App\Services\Ai\ProviderRegistry;
+use Illuminate\Support\Arr;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response as HttpResponse;
 use Inertia\Inertia;
@@ -43,10 +48,18 @@ class TextController extends Controller
     private function render(?Chat $chat = null): Response
     {
         $messages = $chat?->messages()->with(['aiModel.vendor', 'chat.user'])->orderBy('id')->get();
+        // Картриджи, подключённые к последнему вопросу, — чтобы продолжить чат с тем же контекстом
+        $lastContext = $messages?->where('role', MessageRole::User)->last()?->context;
 
         return Inertia::render('Text/Index', [
             'vendors' => $this->vendors(),
-            'chat' => $chat?->only('id', 'title', 'ai_model_id'),
+            // Без содержимого: для чипов над полем ввода и подсказок `#` хватает названий и тегов
+            'plates' => auth()->user()->plates()->with('tags')->orderBy('sort')->orderBy('id')->get()
+                ->map(fn (ContextPlate $plate) => ContextController::present($plate, withContent: false)),
+            'chat' => $chat ? [
+                ...$chat->only('id', 'title', 'ai_model_id'),
+                'plate_ids' => $lastContext ? array_column($lastContext, 'plate_id') : [],
+            ] : null,
             'messages' => $messages ? MessageResource::collection($messages)->resolve() : [],
         ]);
     }
@@ -70,26 +83,37 @@ class TextController extends Controller
             ])
             ->get()
             ->filter(fn (Vendor $vendor) => $vendor->models->isNotEmpty())
-            ->map(function (Vendor $vendor) use ($offers, $provider) {
-                $first = $offers[$vendor->models->first()->id]->setRelation('aiModel', $vendor->models->first()->setRelation('vendor', $vendor));
-                $search = $provider->webSearch($first);
+            ->map(fn (Vendor $vendor) => [
+                'slug' => $vendor->slug,
+                'product' => $vendor->product ?? $vendor->name,
+                'models' => $vendor->models->map(function ($model) use ($offers, $provider, $vendor) {
+                    $offer = $offers[$model->id]->setRelation('aiModel', $model->setRelation('vendor', $vendor));
 
-                return [
-                    'slug' => $vendor->slug,
-                    'product' => $vendor->product ?? $vendor->name,
-                    // Что вендор умеет в поиске у текущего провайдера: {max_uses, domains} или null
-                    'web_search' => $search ? ['max_uses' => $search['max_uses'], 'domains' => $search['domains']] : null,
-                    'models' => $vendor->models->map(fn ($model) => [
+                    return [
                         ...$model->only('id', 'name', 'description'),
-                        ...$this->prices($offers[$model->id]),
-                        // Что модель умеет у провайдера и в каких пределах: {temperature: {min, max}, reasoning: {}, …}
-                        'capabilities' => (object) $offers[$model->id]->capabilities
-                            ->mapWithKeys(fn ($row) => [$row->capability->value => (object) $row->limits()])
-                            ->all(),
-                    ]),
-                ];
-            })
+                        ...$this->prices($offer),
+                        'capabilities' => $this->capabilities($offer, $provider),
+                    ];
+                }),
+            ])
             ->values();
+    }
+
+    /**
+     * Что модель умеет у провайдера и в каких пределах: {temperature: {min, max}, web_search: {max_uses, domains}, …}.
+     * Поиск — только если провайдер умеет искать этой моделью (формат API есть), а не просто отмечен в БД.
+     */
+    private function capabilities(ProviderModel $offer, AiProvider $provider): object
+    {
+        $capabilities = $offer->capabilities
+            ->reject(fn ($row) => $row->capability === Capability::WebSearch)
+            ->mapWithKeys(fn ($row) => [$row->capability->value => (object) $row->limits()]);
+
+        if ($search = $provider->webSearch($offer)) {
+            $capabilities[Capability::WebSearch->value] = (object) Arr::only($search, ['max_uses', 'domains']);
+        }
+
+        return (object) $capabilities->all();
     }
 
     private function prices(ProviderModel $offer): array

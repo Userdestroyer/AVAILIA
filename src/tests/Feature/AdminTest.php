@@ -8,6 +8,7 @@ use App\Models\Provider;
 use App\Models\User;
 use App\Models\Vendor;
 use App\Services\Ai\ProviderRegistry;
+use App\Services\Ai\ServiceModel;
 use Database\Seeders\DatabaseSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
@@ -25,12 +26,14 @@ class AdminTest extends TestCase
     protected bool $seed = true;
 
     #[Group('D1')]
-    #[TestDox('Админка и смена провайдера — только администратору; выбранный провайдер становится активным')]
+    #[TestDox('Админка, смена провайдера и сервисной модели — только администратору; выбор применяется')]
     public function test_only_admin_manages_provider(): void
     {
+        $luna = AiModel::where('slug', 'gpt-6-luna')->first();
         $this->actingAs(User::factory()->create());
         $this->get('/admin')->assertForbidden();
         $this->putJson('/admin/provider', ['slug' => 'polza'])->assertForbidden();
+        $this->putJson('/admin/service-model', ['ai_model_id' => $luna->id])->assertForbidden();
         $this->putJson('/admin/providers/polza/models/'.AiModel::first()->id, ['external_id' => 'x'])->assertForbidden();
 
         $this->actingAs(User::factory()->create(['role' => UserRole::Admin]));
@@ -41,6 +44,10 @@ class AdminTest extends TestCase
 
         $this->putJson('/admin/provider', ['slug' => 'polza'])->assertNoContent();
         $this->assertSame('polza', app(ProviderRegistry::class)->activeSlug());
+
+        $this->assertSame('claude-haiku-5-5', app(ServiceModel::class)->model()->slug);
+        $this->putJson('/admin/service-model', ['ai_model_id' => $luna->id])->assertNoContent();
+        $this->assertSame('gpt-6-luna', app(ServiceModel::class)->model()->slug);
     }
 
     #[Group('D1')]
@@ -85,7 +92,7 @@ class AdminTest extends TestCase
         $offer = AiModel::where('slug', 'claude-haiku-5-5')->first()->offerings()->where('provider_id', Provider::where('slug', 'polza')->value('id'))->first();
         $this->assertSame(['10.500000', '50.000000', null], [$offer->price_input, $offer->price_output, $offer->price_cache_read]);
         $this->assertSame([200000, 64000], [$offer->context_length, $offer->max_output_tokens]);
-        // Рассуждения и файлы из сидера пропали — в каталоге их больше нет
-        $this->assertEqualsCanonicalizing(['temperature', 'images'], $offer->capabilities->map(fn ($row) => $row->capability->value)->all());
+        // Рассуждения и файлы из сидера пропали — в каталоге их больше нет; поиск у Polza есть всегда
+        $this->assertEqualsCanonicalizing(['temperature', 'images', 'web_search'], $offer->capabilities->map(fn ($row) => $row->capability->value)->all());
     }
 }

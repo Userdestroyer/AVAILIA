@@ -2,10 +2,12 @@
 
 namespace Tests\Unit\Ai;
 
+use App\Enums\Capability;
 use App\Enums\MessageRole;
 use App\Models\AiModel;
 use App\Models\Message;
 use App\Models\ProviderModel;
+use App\Models\ProviderModelCapability;
 use App\Models\Vendor;
 use App\Services\Ai\Data\ChatOptions;
 use App\Services\Ai\PolzaProvider;
@@ -22,7 +24,7 @@ class PolzaProviderTest extends TestCase
         $model = (new AiModel(['slug' => 'claude-haiku-5-5']))->setRelation('vendor', new Vendor(['slug' => 'anthropic']));
         $offer = (new ProviderModel(['external_id' => 'anthropic/claude-haiku-5.5', 'upstream' => 'amazon-bedrock']))
             ->setRelation('aiModel', $model)
-            ->setRelation('capabilities', collect());
+            ->setRelation('capabilities', collect([new ProviderModelCapability(['capability' => Capability::WebSearch])]));
         $request = fn (int $searches) => (new PolzaProvider('https://polza.ai/api/v1', 'key'))->request(
             $offer,
             [new Message(['role' => MessageRole::User, 'content' => 'Курс?'])],

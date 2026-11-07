@@ -48,6 +48,22 @@ services:
     networks:
       - availia
 
+  # Воркер очереди: фоновые задачи Laravel после ответа (название чата и т.п.).
+  # queue:listen перечитывает код на каждую задачу — правки подхватываются без перезапуска
+  queue:
+    image: availia/php:dev
+    working_dir: /var/www/html
+    volumes:
+      - ./src:/var/www/html:delegated
+    command: ["php", "artisan", "queue:listen", "--tries=3", "--timeout=120"]
+    restart: unless-stopped
+    depends_on:
+      - php
+      - postgres
+      - redis
+    networks:
+      - availia
+
   # ─────────────────────────────────────────────
   # Go-гейтвей: стриминг ответов нейросетей (SSE/WebSocket) через proxyapi.
   # Снаружи доступен через nginx по /gw/. В dev — горячая перезагрузка через air.

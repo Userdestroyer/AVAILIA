@@ -1,7 +1,7 @@
 <script setup>
 import { Head, router, usePage } from '@inertiajs/vue3';
 import {
-    ArrowUp, Brain, Globe, Info, MessageSquare, Paperclip, Plus, RotateCcw, SlidersHorizontal, Sparkle, Users, X, Zap,
+    ArrowUp, Brain, Disc3, Globe, Hash, Info, MessageSquare, Paperclip, Plus, RotateCcw, SlidersHorizontal, Sparkle, Users, X, Zap,
 } from 'lucide-vue-next';
 import { computed, nextTick, onBeforeUnmount, ref, toRef, watch, watchEffect } from 'vue';
 import AppLayout from '@/layouts/AppLayout.vue';
@@ -11,6 +11,8 @@ import MessageActions from '@/components/chat/MessageActions.vue';
 import GlassToggle from '@/components/GlassToggle.vue';
 import ModelPicker from '@/components/ModelPicker.vue';
 import ModeShell from '@/components/ModeShell.vue';
+import VendorIcon from '@/components/VendorIcon.vue';
+import { fuzzy, useComposerMenu } from '@/composables/useComposerMenu';
 import { useChatPreferences } from '@/composables/useChatPreferences';
 import { useMediaQuery } from '@/composables/useMediaQuery';
 import { useThinking } from '@/composables/useThinking';
@@ -20,6 +22,8 @@ defineOptions({ layout: AppLayout });
 
 const props = defineProps({
     vendors: { type: Array, required: true },
+    // Картриджи контекста юзера — без содержимого: названия, теги, закреплён ли, размер
+    plates: { type: Array, default: () => [] },
     chat: { type: Object, default: null },
     messages: { type: Array, default: () => [] },
 });
@@ -121,18 +125,13 @@ const setSearchLimit = (event) => {
 const domainsInput = toRef(preferences, 'domains');
 const allowedDomains = computed(() => String(domainsInput.value ?? '').split(/[\s,;]+/).map((d) => d.trim()).filter(Boolean));
 
-// Что умеют вендоры выбранных моделей — подсказки под настройками поиска
-const targetVendors = computed(() => {
-    const slugs = new Set(targetModels.value.map((id) => allModels.value.find((m) => m.id === id)?.vendor));
-    return props.vendors.filter((v) => slugs.has(v.slug));
-});
+// Что умеют выбранные модели в поиске — подсказки под его настройками
 const searchHints = computed(() => {
-    const names = (filter) => targetVendors.value.filter(filter).map((v) => v.product).join(', ');
+    const names = (filter) => targetEntries.value.filter((m) => filter(m.capabilities?.web_search)).map((m) => m.name).join(', ');
     return [
-        names((v) => !v.web_search) && `${names((v) => !v.web_search)} — без поиска, ответит по своим знаниям`,
-        names((v) => v.web_search && !v.web_search.max_uses) && `${names((v) => v.web_search && !v.web_search.max_uses)} — число поисков решает сам`,
-        allowedDomains.value.length && names((v) => v.web_search && !v.web_search.domains)
-            && `${names((v) => v.web_search && !v.web_search.domains)} — не умеет ограничивать сайты`,
+        names((s) => !s) && `${names((s) => !s)} — без поиска, ответит по своим знаниям`,
+        names((s) => s && !s.max_uses) && `${names((s) => s && !s.max_uses)} — число поисков решает сам`,
+        allowedDomains.value.length && names((s) => s && !s.domains) && `${names((s) => s && !s.domains)} — не умеет ограничивать сайты`,
     ].filter(Boolean);
 });
 
@@ -194,8 +193,70 @@ watchEffect(() => {
     thinking.value = busy.value;
 });
 
-const placeholder = computed(() =>
-    requestMode.value === 'multi' ? `Спросить сразу ${multiIds.value.length} модели…` : 'Написать сообщение…');
+// ── Контекст запроса: картриджи (#) и призванные модели (@) ──
+// В начатом чате — те же картриджи, что у последнего вопроса; в новом — закреплённые
+const plateExists = (id) => props.plates.some((p) => p.id === id);
+const attachedPlates = ref(
+    (props.chat?.plate_ids?.length ? props.chat.plate_ids : props.plates.filter((p) => p.is_pinned).map((p) => p.id)).filter(plateExists),
+);
+const attached = computed(() => attachedPlates.value.map((id) => props.plates.find((p) => p.id === id)).filter(Boolean));
+const attachedTokens = computed(() => attached.value.reduce((sum, p) => sum + p.tokens, 0));
+const attachPlates = (ids) => (attachedPlates.value = [...new Set([...attachedPlates.value, ...ids])]);
+const detachPlate = (id) => (attachedPlates.value = attachedPlates.value.filter((p) => p !== id));
+
+// @модель в сообщении: этот вопрос — именно ей (несколько — мульти-запрос), выбор в панели не меняется
+const mentioned = ref([]);
+const mentionedModels = computed(() => mentioned.value.map((id) => allModels.value.find((m) => m.id === id)).filter(Boolean));
+const sendTargets = computed(() => (mentioned.value.length ? mentioned.value : targetModels.value));
+
+const menu = useComposerMenu(textarea, message, {
+    '@': (query) => allModels.value
+        .filter((m) => !mentioned.value.includes(m.id) && fuzzy(query, m.name, m.vendor, m.description))
+        .map((m) => ({ key: `m${m.id}`, kind: 'model', model: m, label: m.name, hint: m.description })),
+    '#': (query) => {
+        // Тег — отдельной строкой, только если подключает сразу несколько ещё не подключённых картриджей;
+        // тег одного картриджа — дубль, такой картридж находится по своим тегам и так
+        const free = props.plates.filter((p) => !attachedPlates.value.includes(p.id));
+        const tags = [...new Set(free.flatMap((p) => p.tags))]
+            .filter((tag) => fuzzy(query, tag))
+            .map((tag) => ({ tag, ids: free.filter((p) => p.tags.includes(tag)).map((p) => p.id) }))
+            .filter(({ ids }) => ids.length > 1)
+            .map(({ tag, ids }) => ({ key: `t${tag}`, kind: 'tag', ids, label: `#${tag}`, hint: `${ids.length} ${ids.length < 5 ? 'картриджа' : 'картриджей'}` }));
+        const plates = free
+            .filter((p) => fuzzy(query, p.title, ...p.tags))
+            .map((p) => ({ key: `p${p.id}`, kind: 'plate', ids: [p.id], label: p.title, hint: p.tags.map((t) => `#${t}`).join(' ') }));
+        return [...tags, ...plates];
+    },
+});
+
+const { items: menuItems, index: menuIndex, open: menuOpen } = menu;
+
+// Кнопка `#` рядом со скрепкой: вставляет триггер и открывает подсказки (на телефоне удобнее, чем искать символ)
+const insertTrigger = (char) => {
+    const el = textarea.value;
+    const at = el.selectionStart ?? message.value.length;
+    const glue = at > 0 && !/\s/.test(message.value[at - 1]) ? ' ' : '';
+    message.value = message.value.slice(0, at) + glue + char + message.value.slice(at);
+    nextTick(() => {
+        el.focus();
+        el.setSelectionRange(at + glue.length + 1, at + glue.length + 1);
+        menu.detect();
+    });
+};
+
+const pickFromMenu = (item) => {
+    if (item.kind === 'model') {
+        if (mentioned.value.length < MAX_MODELS) mentioned.value.push(item.model.id);
+    } else {
+        attachPlates(item.ids);
+    }
+};
+
+const placeholder = computed(() => {
+    if (mentionedModels.value.length > 1) return `Спросить ${mentionedModels.value.length} модели…`;
+    if (mentionedModels.value.length) return `Спросить ${mentionedModels.value[0].name}…`;
+    return requestMode.value === 'multi' ? `Спросить сразу ${multiIds.value.length} модели…` : 'Написать сообщение…';
+});
 
 watch(message, async () => {
     await nextTick();
@@ -214,8 +275,17 @@ const send = async () => {
 
     error.value = null;
     sending.value = true;
+    // Отсчёт скорости глазами человека: от нажатия до первого токена на экране
+    const sentAt = performance.now();
 
-    messages.value.push({ id: `local-${++localSeq}`, role: 'user', status: 'done', content });
+    messages.value.push({
+        id: `local-${++localSeq}`,
+        role: 'user',
+        status: 'done',
+        content,
+        // Пластинки над вопросом — сразу, не дожидаясь сервера
+        context: attached.value.map((p) => ({ plate_id: p.id, title: p.title })),
+    });
     const local = messages.value.length - 1;
     message.value = '';
     scrollToBottom();
@@ -224,8 +294,9 @@ const send = async () => {
     try {
         started = await postJson('/text/messages', {
             chat_id: chatId.value,
-            ai_model_ids: targetModels.value,
+            ai_model_ids: sendTargets.value,
             content,
+            plate_ids: attachedPlates.value,
             max_tokens: maxTokens.value,
             reasoning_effort: deepThinking.value ? effort.value : null,
             temperature: temperatureModels.value.length ? temperature.value : null,
@@ -243,6 +314,7 @@ const send = async () => {
     }
 
     messages.value[local] = started.user_message;
+    mentioned.value = [];
     if (!chatId.value) {
         chatId.value = started.chat.id;
         window.history.replaceState(window.history.state, '', `/text/${started.chat.id}`);
@@ -251,7 +323,7 @@ const send = async () => {
     // Все модели стартуют одновременно — у каждой свой стрим из Go-гейтвея
     for (const answer of started.answers) {
         messages.value.push({ ...answer.message, status: 'streaming' });
-        stream(answer.stream_token, messages.value.at(-1));
+        stream(answer.stream_token, messages.value.at(-1), sentAt);
     }
 };
 
@@ -268,14 +340,18 @@ const closeAllStreams = () => {
     sources.forEach(closeStream);
 };
 
-const stream = (token, answer) => {
+const stream = (token, answer, sentAt) => {
     let finished = false;
+    let clientTtft = null;
+    // Первое видимое — текст или пузырёк поиска (как считает и гейтвей)
+    const seen = () => (clientTtft ??= Math.round(performance.now() - sentAt));
     const source = new EventSource(`/gw/stream?token=${encodeURIComponent(token)}`);
     sources.add(source);
     activeStreams.value = sources.size;
 
     // Поиски модели — пузырьки над ответом; обновляем по id (ищу → ✓ / ✗)
     source.addEventListener('search', (event) => {
+        seen();
         const search = JSON.parse(event.data);
         answer.searches ??= [];
         const index = answer.searches.findIndex((s) => s.id === search.id);
@@ -284,6 +360,7 @@ const stream = (token, answer) => {
     });
 
     source.addEventListener('delta', (event) => {
+        seen();
         answer.content += JSON.parse(event.data).text;
     });
 
@@ -291,6 +368,8 @@ const stream = (token, answer) => {
         finished = true;
         Object.assign(answer, JSON.parse(event.data).message);
         closeStream(source);
+        // Замер — фоном, после ответа; не дошёл — не страшно
+        if (clientTtft !== null) postJson(`/text/messages/${answer.id}/metrics`, { client_ttft_ms: clientTtft }).catch(() => {});
         if (!sources.size) router.reload({ only: ['recentChats'] });
     });
 
@@ -328,8 +407,18 @@ const deleteMessage = async (message) => {
     }
 };
 
+// На сенсорной клавиатуре Enter — перенос строки (отправка — кнопкой), на физической — отправка.
+// Ctrl/⌘+Enter отправляет везде
+const isTouch = useMediaQuery('(pointer: coarse)');
 const onKeydown = (event) => {
-    if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
+    if (menu.onKeydown(event, pickFromMenu)) return;
+    // Backspace в пустом поле снимает последнюю призванную модель
+    if (event.key === 'Backspace' && !message.value && mentioned.value.length) {
+        mentioned.value.pop();
+        return;
+    }
+    if (event.key !== 'Enter' || event.isComposing) return;
+    if (event.ctrlKey || event.metaKey || (!isTouch.value && !event.shiftKey)) {
         event.preventDefault();
         send();
     }
@@ -351,15 +440,29 @@ const onKeydown = (event) => {
                 {{ thinking ? 'Думаю…' : 'Чем могу помочь?' }}
             </h1>
             <p class="mt-4 text-base font-light text-white/60 md:text-lg">
-                Задайте вопрос, выберите модель или начните с примера…
+                Задайте вопрос. <span class="text-white/80">@модель</span> — спросить другую, <span class="text-white/80">#тег</span> — подключить контекст о себе
             </p>
         </div>
 
         <!-- Переписка: одно стекло на всю ленту, сообщения скроллятся внутри -->
-        <div v-else v-frost class="glass flex min-h-0 flex-1 flex-col overflow-hidden rounded-[22px] md:rounded-[28px]">
-            <div ref="scroller" class="scroll-fade scrollbar-glass flex-1 space-y-4 overflow-y-auto px-2 py-3 md:space-y-6 md:px-6 md:py-8">
+        <div v-else v-frost class="glass relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-[22px] md:rounded-[28px]">
+            <div class="scroll-edge top-0" aria-hidden="true" />
+            <div class="scroll-edge bottom-0 [--edge-to:top]" aria-hidden="true" />
+            <div ref="scroller" class="scrollbar-glass flex-1 space-y-4 overflow-y-auto px-2 py-3 md:space-y-6 md:px-6 md:py-8">
                 <template v-for="(turn, index) in turns" :key="turn.question?.id ?? index">
                     <div v-if="turn.question" class="group flex flex-col items-end gap-0.5">
+                        <!-- Какие картриджи ушли с вопросом -->
+                        <div v-if="turn.question.context?.length" class="mb-0.5 flex max-w-[85%] flex-wrap justify-end gap-1">
+                            <span
+                                v-for="item in turn.question.context"
+                                :key="item.plate_id"
+                                class="flex items-center gap-1 text-[11px] text-white/45"
+                                :title="`Картридж «${item.title}» был подключён к вопросу`"
+                            >
+                                <Disc3 class="vein size-3" :stroke-width="1.5" />
+                                {{ item.title }}
+                            </span>
+                        </div>
                         <div class="max-w-[85%] rounded-2xl rounded-br-md bg-(--bubble-bg) px-3 py-2 text-[0.875rem] leading-relaxed whitespace-pre-wrap md:px-4 md:py-2.5 md:text-[16px]">
                             {{ turn.question.content }}
                         </div>
@@ -382,27 +485,91 @@ const onKeydown = (event) => {
         <p v-if="error" class="px-4 text-sm text-hot-soft">{{ error }}</p>
 
         <!-- Поле ввода -->
-        <form v-frost class="glass flex items-end gap-1.5 rounded-[22px] px-2 py-1.5 md:gap-3 md:rounded-[28px] md:px-4 md:py-3" @submit.prevent="send">
-            <button type="button" class="p-1.5 text-white/60 hover:text-white md:p-2" title="Прикрепить файл (скоро)" disabled>
-                <Paperclip class="size-[18px] md:size-5" :stroke-width="1.5" />
-            </button>
-            <textarea
-                ref="textarea"
-                v-model="message"
-                rows="1"
-                :placeholder="placeholder"
-                class="max-h-[200px] flex-1 resize-none bg-transparent py-1.5 text-[15px] font-light outline-none placeholder:text-white/45 md:py-2 md:text-[17px]"
-                @keydown="onKeydown"
-            />
-            <button
-                type="submit"
-                :disabled="!message.trim() || busy"
-                class="flex size-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-b from-[#6b9bff] to-cool text-white shadow-lg shadow-cool/40 transition disabled:opacity-40 md:size-11"
-                title="Отправить"
-            >
-                <ArrowUp class="size-5" :stroke-width="2" />
-            </button>
-        </form>
+        <div class="relative">
+            <!-- Подсказки: @ — модели, # — теги и картриджи -->
+            <div v-if="menuOpen" class="absolute inset-x-0 bottom-full z-20 mb-2 md:right-auto md:w-[26rem]">
+                <ul class="scrollbar-glass max-h-72 overflow-y-auto rounded-2xl border border-white/10 bg-[#2c3445]/95 p-1 shadow-2xl backdrop-blur-xl">
+                    <li v-for="(item, i) in menuItems" :key="item.key">
+                        <button
+                            type="button"
+                            class="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left transition"
+                            :class="i === menuIndex ? 'bg-white/10' : 'hover:bg-white/5'"
+                            @mousedown.prevent="pickFromMenu(menu.take(item))"
+                            @mouseenter="menuIndex = i"
+                        >
+                            <VendorIcon v-if="item.kind === 'model'" :slug="item.model.vendor" />
+                            <Hash v-else-if="item.kind === 'tag'" class="size-4 shrink-0 text-cool-soft" :stroke-width="1.5" />
+                            <Disc3 v-else class="size-4 shrink-0 text-cool-soft" :stroke-width="1.5" />
+                            <span class="min-w-0 flex-1">
+                                <span class="block truncate text-sm">{{ item.label }}</span>
+                                <span v-if="item.hint" class="block truncate text-xs text-white/45">{{ item.hint }}</span>
+                            </span>
+                        </button>
+                    </li>
+                </ul>
+            </div>
+
+            <form v-frost class="glass flex flex-col rounded-[22px] px-2 py-1.5 md:rounded-[28px] md:px-4 md:py-3" @submit.prevent="send">
+                <!-- Что уйдёт с вопросом: призванные модели и пластинки картриджей (крутятся, пока модель отвечает) -->
+                <div v-if="mentionedModels.length || attached.length" class="flex flex-wrap items-center gap-1 px-1 pb-1">
+                    <span
+                        v-for="m in mentionedModels"
+                        :key="`m${m.id}`"
+                        class="flex items-center gap-1 rounded-full bg-cool/15 py-0.5 pr-0.5 pl-2 text-xs text-cool-soft"
+                    >
+                        @{{ m.name }}
+                        <button type="button" class="rounded-full p-0.5 opacity-60 hover:opacity-100" title="Не спрашивать эту модель" @click="mentioned = mentioned.filter((id) => id !== m.id)">
+                            <X class="size-3" :stroke-width="2" />
+                        </button>
+                    </span>
+                    <span
+                        v-for="p in attached"
+                        :key="`p${p.id}`"
+                        class="glass-inset flex items-center gap-1 rounded-full py-0.5 pr-0.5 pl-1 text-xs text-white/75"
+                        :title="`≈ ${p.tokens} токенов к каждому запросу`"
+                    >
+                        <Disc3 class="size-3.5 text-cool-soft" :class="{ 'animate-spin [animation-duration:2.4s]': busy }" :stroke-width="1.5" />
+                        {{ p.title }}
+                        <button type="button" class="rounded-full p-0.5 text-white/40 hover:text-white" title="Не подключать к этому чату" @click="detachPlate(p.id)">
+                            <X class="size-3" :stroke-width="2" />
+                        </button>
+                    </span>
+                    <span v-if="attached.length" class="ml-auto pr-1 text-[11px] text-white/35 tabular-nums" title="Примерно столько токенов картриджи добавят к каждому запросу">
+                        ≈ {{ attachedTokens }} ток.
+                    </span>
+                </div>
+
+                <div class="flex items-end gap-1 md:gap-2">
+                    <button type="button" class="vein p-1.5 md:p-2" title="Прикрепить файл (скоро)" disabled>
+                        <Paperclip class="size-[18px] md:size-5" :stroke-width="1.5" />
+                    </button>
+                    <button v-if="plates.length" type="button" class="vein p-1.5 hover:text-white md:p-2" title="Подключить контекст (#)" @click="insertTrigger('#')">
+                        <Hash class="size-[18px] md:size-5" :stroke-width="1.5" />
+                    </button>
+                    <textarea
+                        ref="textarea"
+                        v-model="message"
+                        rows="1"
+                        :placeholder="placeholder"
+                        :enterkeyhint="isTouch ? 'enter' : 'send'"
+                        class="max-h-[200px] flex-1 resize-none bg-transparent py-1.5 text-[15px] font-light outline-none placeholder:text-white/45 md:py-2 md:text-[17px]"
+                        @keydown="onKeydown"
+                        @input="menu.detect()"
+                        @click="menu.detect()"
+                        @keyup="['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes($event.key) && menu.detect()"
+                        @blur="menu.close()"
+                    />
+                    <button
+                        type="submit"
+                        :disabled="!message.trim() || busy"
+                        class="flex size-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-b from-[#6b9bff] to-cool text-white shadow-lg shadow-cool/40 transition disabled:opacity-40 md:size-11"
+                        title="Отправить"
+                    >
+                        <ArrowUp class="size-5" :stroke-width="2" />
+                    </button>
+                </div>
+            </form>
+        </div>
 
         <!-- Настройки на узких экранах открываются кнопкой в верхней строке -->
         <template #actions>
@@ -414,7 +581,7 @@ const onKeydown = (event) => {
                 title="Настройки модели"
                 @click="showSettings = !showSettings"
             >
-                <SlidersHorizontal class="size-5" :stroke-width="1.5" />
+                <SlidersHorizontal class="vein size-5" :stroke-width="1.5" />
             </button>
         </template>
 
@@ -484,7 +651,7 @@ const onKeydown = (event) => {
                     </template>
                 </div>
 
-                <div class="my-4 h-px bg-white/10" />
+                <div class="vein-line my-4 h-px" />
 
                 <!-- Размер ответа -->
                 <label class="block">
@@ -497,7 +664,7 @@ const onKeydown = (event) => {
                         type="range"
                         min="0"
                         :max="TOKEN_STEPS.length - 1"
-                        class="mt-3 h-1 w-full cursor-pointer accent-cool"
+                        class="vein mt-3 h-1 w-full cursor-pointer accent-cool"
                     />
                 </label>
 
@@ -505,7 +672,7 @@ const onKeydown = (event) => {
                 <div class="mt-4 flex items-center justify-between">
                     <span class="flex items-center gap-2 text-[15px]">
                         Effort
-                        <Info class="size-4 text-white/40" :stroke-width="1.5" title="Насколько глубоко модель рассуждает — работает вместе с Deep Thinking" />
+                        <Info class="vein size-4" :stroke-width="1.5" title="Насколько глубоко модель рассуждает — работает вместе с Deep Thinking" />
                     </span>
                     <select
                         v-model="effort"
@@ -522,7 +689,7 @@ const onKeydown = (event) => {
                     <span class="flex items-center justify-between text-[15px]">
                         <span class="flex items-center gap-2">
                             Температура
-                            <Info class="size-4 text-white/40" :stroke-width="1.5" title="Ниже — точнее и предсказуемее, выше — разнообразнее и смелее. «Авто» — как задумано моделью" />
+                            <Info class="vein size-4" :stroke-width="1.5" title="Ниже — точнее и предсказуемее, выше — разнообразнее и смелее. «Авто» — как задумано моделью" />
                         </span>
                         <span class="flex items-center gap-1">
                             <button
@@ -546,14 +713,14 @@ const onKeydown = (event) => {
                         :max="temperatureMax"
                         step="0.1"
                         :disabled="!temperatureModels.length"
-                        class="mt-3 h-1 w-full cursor-pointer accent-cool transition-opacity disabled:cursor-default disabled:opacity-30"
+                        class="vein mt-3 h-1 w-full cursor-pointer accent-cool transition-opacity disabled:cursor-default disabled:opacity-30"
                         :class="{ 'opacity-50': temperature === null }"
                         @input="temperature = Number($event.target.value)"
                     />
                     <p v-if="temperatureHint" class="mt-2 text-xs leading-snug text-white/45">{{ temperatureHint }}</p>
                 </div>
 
-                <div class="my-4 h-px bg-white/10" />
+                <div class="vein-line my-4 h-px" />
 
                 <!-- Переключатели -->
                 <div class="space-y-3">

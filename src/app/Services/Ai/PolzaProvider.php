@@ -19,12 +19,11 @@ class PolzaProvider extends AiProvider
     }
 
     /**
-     * Поиск Polza работает с любой моделью прямо в chat/completions и соблюдает
-     * max_uses и allowed_domains (в отличие от родного поиска провайдеров модели).
+     * Поиск Polza (polza:web_search) работает с любой моделью прямо в chat/completions.
      */
-    public function webSearch(ProviderModel $offer): ?array
+    protected function searchFormat(ProviderModel $offer): ?string
     {
-        return ['format' => ChatRequest::FORMAT_CHAT, 'max_uses' => true, 'domains' => true];
+        return ChatRequest::FORMAT_CHAT;
     }
 
     public function reportedCost(array $usage): ?array

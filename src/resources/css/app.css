@@ -18,30 +18,35 @@
 /* Цвета тем — в паре с resources/js/lib/theme.js (там полотно фона для шейдера) */
 :root {
     --app-bg: #2a3142;
-    --glass-bg: rgb(200 210 230 / 0.1);
+    --glass-bg: rgb(200 210 230 / 0.14);
     --glass-border: rgb(255 255 255 / 0.1);
     --glass-highlight: rgb(255 255 255 / 0.08);
     /* Насколько стекло приглушает всполохи под собой — чтобы свет не спорил с текстом */
-    --glass-dim: 0.7;
+    --glass-dim: 0.69;
     /* Элементы на стекле: поля, кнопки, сообщения юзера */
     --inset-bg: rgb(255 255 255 / 0.07);
     --inset-border: rgb(255 255 255 / 0.06);
     --bubble-bg: rgb(255 255 255 / 0.1);
     /* «Скобки» ответа ассистента */
     --answer-border: rgb(255 255 255 / 0.12);
+    /* Сила «вырезок» (см. vein): чем светлее, тем ярче сквозь них проступают вены */
+    --vein: rgb(150 155 166);
+    --vein-soft: rgb(112 116 126);
 }
 
 /* Тёмная тема — тёмное (дымчатое) стекло, а не белёсое */
 :root[data-theme='dark'] {
     --app-bg: #111317;
-    --glass-bg: rgb(14 16 20 / 0.45);
+    --glass-bg: rgb(18 20 25 / 0.52);
     --glass-border: rgb(255 255 255 / 0.06);
     --glass-highlight: rgb(255 255 255 / 0.04);
-    --glass-dim: 0.62;
+    --glass-dim: 0.63;
     --inset-bg: rgb(255 255 255 / 0.045);
     --inset-border: rgb(255 255 255 / 0.05);
     --bubble-bg: rgb(255 255 255 / 0.07);
     --answer-border: rgb(255 255 255 / 0.09);
+    --vein: rgb(200 200 206);
+    --vein-soft: rgb(150 150 156);
 }
 
 @layer base {
@@ -53,6 +58,13 @@
 
     body {
         @apply bg-(--app-bg) font-light text-white/90;
+    }
+
+    /* Приложение — ровно в экран, скроллятся только ленты внутри: страница целиком не ездит
+       ни на высоту адресной строки, ни «резинкой» */
+    html:has([data-app-shell]) {
+        overflow: hidden;
+        overscroll-behavior: none;
     }
 }
 
@@ -93,7 +105,9 @@
         position: absolute;
         inset-inline: 0;
         height: 1rem;
-        border: 1px solid var(--answer-border);
+        /* Скобки — тоже «вырезка»: сквозь них светятся вены */
+        border: 1px solid var(--vein-soft);
+        mix-blend-mode: color-dodge;
         pointer-events: none;
     }
 
@@ -131,8 +145,47 @@
 }
 
 /* Текст плавно уходит под края стеклянного блока при скролле */
-@utility scroll-fade {
-    mask-image: linear-gradient(to bottom, transparent 0, black 2rem, black calc(100% - 2rem), transparent 100%);
+/* «Вырезки» в стекле: тонкие элементы (иконки, контуры, линии, ползунки) не закрашивают стекло,
+   а усиливают то, что под ним (color-dodge), — сквозь них светятся всполохи фона, с их цветом
+   и течением. Цвет задаёт силу усиления (--vein). Работает, пока между элементом и фоном нет
+   изолирующего предка (mask, filter, opacity < 1): там элемент — обычный серый контур */
+@utility vein {
+    color: var(--vein);
+    mix-blend-mode: color-dodge;
+}
+
+/* Линии-разделители и подобное — мягче иконок */
+@utility vein-line {
+    background-color: var(--vein-soft);
+    mix-blend-mode: color-dodge;
+}
+
+/* Ободок-вырезка поверх обычной рамки элемента */
+@utility vein-ring {
+    position: relative;
+
+    &::after {
+        content: '';
+        position: absolute;
+        inset: -1px;
+        border: 1px solid var(--vein-soft);
+        border-radius: inherit;
+        mix-blend-mode: color-dodge;
+        pointer-events: none;
+    }
+}
+
+/* Края ленты: текст уходит в матовое стекло. Не маской — она изолировала бы ленту,
+   и «вырезки» в сообщениях перестали бы видеть фон */
+@utility scroll-edge {
+    position: absolute;
+    inset-inline: 0;
+    height: 1.5rem;
+    pointer-events: none;
+    z-index: 1;
+    -webkit-backdrop-filter: blur(6px);
+    backdrop-filter: blur(6px);
+    mask-image: linear-gradient(to var(--edge-to, bottom), black, transparent);
 }
 
 /* Ответы модели (Markdown): типографика плагина, подогнанная под стекло */
@@ -203,6 +256,31 @@
             padding: 0.85em 1.1em;
         }
     }
+    & :where(pre) { position: relative; }
+
+    /* Скопировать блок кода: на десктопе — при наведении на блок, на сенсорных — всегда */
+    & .code-copy {
+        position: absolute;
+        top: 0.45em;
+        right: 0.45em;
+        display: flex;
+        padding: 0.35em;
+        border-radius: 0.5rem;
+        color: var(--vein);
+        mix-blend-mode: color-dodge;
+        opacity: 0;
+        transition: opacity 150ms;
+        & svg { width: 14px; height: 14px; }
+        & .code-copy-done { display: none; color: rgb(110 231 183); }
+        &[data-copied] .code-copy-idle { display: none; }
+        &[data-copied] .code-copy-done { display: block; }
+        &:hover { color: white; }
+    }
+    & pre:hover .code-copy, & .code-copy:focus-visible, & .code-copy[data-copied] { opacity: 1; }
+    @media (hover: none) {
+        & .code-copy { opacity: 1; }
+    }
+
     /* Без :where — CSS темы highlight.js грузится позже и иначе перебивает фон (двойная рамка) */
     & pre code.hljs { background: transparent; padding: 0; }
 

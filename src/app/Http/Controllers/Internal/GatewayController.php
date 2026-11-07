@@ -30,6 +30,8 @@ class GatewayController extends Controller
             'searches.*.status' => ['required', 'in:searching,done,failed'],
             'searches.*.query' => ['nullable', 'string', 'max:1000'],
             'error' => ['nullable', 'string'],
+            'ttft_ms' => ['nullable', 'integer', 'min:0'],
+            'duration_ms' => ['nullable', 'integer', 'min:0'],
         ]);
 
         return response()->json([

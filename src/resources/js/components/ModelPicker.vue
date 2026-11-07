@@ -42,25 +42,25 @@ const toggle = (what) => (open.value = open.value === what ? null : what);
         <!-- Вендор -->
         <button
             type="button"
-            class="glass-inset relative flex w-14 shrink-0 items-center justify-center rounded-2xl"
+            class="glass-inset vein-ring flex w-14 shrink-0 items-center justify-center rounded-2xl"
             :title="vendor?.product"
             @click="toggle('vendor')"
         >
             <VendorIcon v-if="vendor" :slug="vendor.slug" class="!size-5" />
-            <ChevronDown class="absolute right-1.5 bottom-1.5 size-3 text-white/40" :stroke-width="2" />
+            <ChevronDown class="vein absolute right-1.5 bottom-1.5 size-3" :stroke-width="2" />
         </button>
 
         <!-- Модель вендора -->
         <button
             type="button"
-            class="glass-inset flex min-w-0 flex-1 items-center gap-3 rounded-2xl px-4 py-2.5 text-left"
+            class="glass-inset vein-ring flex min-w-0 flex-1 items-center gap-3 rounded-2xl px-4 py-2.5 text-left"
             @click="toggle('model')"
         >
             <span class="min-w-0 flex-1">
                 <span class="block truncate text-[15px]">{{ model?.name ?? 'Выберите модель' }}</span>
                 <span class="block truncate text-xs text-white/50">{{ vendor?.product }} · {{ model?.description }}</span>
             </span>
-            <ChevronDown class="size-4 shrink-0 text-white/60 transition" :class="{ 'rotate-180': open === 'model' }" :stroke-width="1.5" />
+            <ChevronDown class="vein size-4 shrink-0 transition" :class="{ 'rotate-180': open === 'model' }" :stroke-width="1.5" />
         </button>
 
         <div v-if="open" class="fixed inset-0 z-10" @click="open = null" />

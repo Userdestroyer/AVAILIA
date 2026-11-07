@@ -21,28 +21,32 @@ class ProxyApiProviderTest extends TestCase
 {
     public static function searchRequests(): array
     {
+        $all = ['web_search' => ['max_uses' => true, 'domains' => true]];
+
         return [
             // Claude соблюдает лимит и домены только в родном Messages
-            'Claude — Messages, лимит и домены' => ['anthropic', true, 'messages', '/messages',
+            'Claude — Messages, лимит и домены' => ['anthropic', $all, true, 'messages', '/messages',
                 [['type' => 'web_search_20250305', 'name' => 'web_search', 'max_uses' => 3, 'allowed_domains' => ['cbr.ru']]]],
             // У GPT нет лимита поисков, домены — через filters
-            'GPT — Responses, только домены' => ['openai', true, 'responses', '/responses',
+            'GPT — Responses, только домены' => ['openai', ['web_search' => ['max_uses' => false, 'domains' => true]], true, 'responses', '/responses',
                 [['type' => 'web_search', 'filters' => ['allowed_domains' => ['cbr.ru']]]]],
             // Gemini принимает лимит, доменов не поддерживает
-            'Gemini — Responses, только лимит' => ['google', true, 'responses', '/responses',
+            'Gemini — Responses, только лимит' => ['google', ['web_search' => ['max_uses' => true, 'domains' => false]], true, 'responses', '/responses',
                 [['type' => 'web_search', 'max_uses' => 3]]],
-            'Grok — поиска нет, обычный chat' => ['xai', true, 'chat', '/chat/completions', null],
-            'без поиска — всегда chat' => ['anthropic', false, 'chat', '/chat/completions', null],
+            // Отметка в БД не поможет, если у провайдера нет формата с поиском для этого вендора
+            'Grok — поиска нет у proxyapi' => ['xai', $all, true, 'chat', '/chat/completions', null],
+            'модель без возможности поиска' => ['anthropic', [], true, 'chat', '/chat/completions', null],
+            'без поиска — всегда chat' => ['anthropic', $all, false, 'chat', '/chat/completions', null],
         ];
     }
 
     #[Group('U1')]
     #[DataProvider('searchRequests')]
-    #[TestDox('Поиск идёт в формате, где вендор его поддерживает, и только с ограничениями, которые он соблюдает')]
-    public function test_request_uses_format_with_web_search(string $vendor, bool $search, string $format, string $path, ?array $tools): void
+    #[TestDox('Поиск идёт в формате, где провайдер его поддерживает, и только с ограничениями, которые модель соблюдает')]
+    public function test_request_uses_format_with_web_search(string $vendor, array $capabilities, bool $search, string $format, string $path, ?array $tools): void
     {
         $request = $this->provider()->request(
-            $this->offer($vendor, 'vendor/model-at-proxyapi'),
+            $this->offer($vendor, 'vendor/model-at-proxyapi', $capabilities),
             [new Message(['role' => MessageRole::User, 'content' => 'Курс?'])],
             new ChatOptions(maxTokens: 2048, webSearch: $search, maxWebSearches: 3, allowedDomains: ['cbr.ru']),
         );
@@ -61,8 +65,11 @@ class ProxyApiProviderTest extends TestCase
             // Температура зажимается в пределы модели, лимит ответа — в её максимум
             'chat, умеет всё' => ['xai', false, $all, ['temperature' => 1.5, 'reasoning_effort' => 'high', 'max_tokens' => 1024]],
             'chat, ничего не умеет' => ['xai', false, [], ['temperature' => null, 'reasoning_effort' => null, 'max_tokens' => 1024]],
-            'Responses (Gemini с поиском)' => ['google', true, $all, ['temperature' => 1.5, 'reasoning' => ['effort' => 'high'], 'max_output_tokens' => 1024]],
-            'Messages (Claude с поиском)' => ['anthropic', true, ['temperature' => ['max' => 1]], ['temperature' => 1.0, 'max_tokens' => 1024]],
+            'Responses (Gemini с поиском)' => ['google', true, [...$all, 'web_search' => null], ['temperature' => 1.5, 'reasoning' => ['effort' => 'high'], 'max_output_tokens' => 1024]],
+            'Messages (Claude с поиском)' => ['anthropic', true, ['temperature' => ['max' => 1], 'web_search' => null], ['temperature' => 1.0, 'max_tokens' => 1024, 'thinking' => null]],
+            // Рассуждения в Messages — адаптивные с уровнем усилий, температура с ними не уходит
+            'Messages (Claude с поиском и рассуждениями)' => ['anthropic', true, [...$all, 'web_search' => null],
+                ['thinking' => ['type' => 'adaptive'], 'output_config' => ['effort' => 'high'], 'temperature' => null]],
         ];
     }
 
@@ -83,6 +90,34 @@ class ProxyApiProviderTest extends TestCase
         foreach ($expected as $key => $value) {
             $this->assertSame($value, $body[$key] ?? null, $key);
         }
+    }
+
+    public static function systemPrompts(): array
+    {
+        $search = ['web_search' => null];
+
+        return [
+            'chat — сообщением system' => ['xai', false, [], fn (array $body) => [$body['messages'][0], $body['system'] ?? null],
+                [['role' => 'system', 'content' => 'Картриджи'], null]],
+            'Messages — полем system, не сообщением' => ['anthropic', true, $search, fn (array $body) => [$body['system'], $body['messages'][0]['role']],
+                ['Картриджи', 'user']],
+            'Responses — полем instructions' => ['google', true, $search, fn (array $body) => [$body['instructions'], $body['input'][0]['role']],
+                ['Картриджи', 'user']],
+        ];
+    }
+
+    #[Group('U1')]
+    #[DataProvider('systemPrompts')]
+    #[TestDox('Системный промпт (картриджи контекста) уходит туда, где его ждёт формат API')]
+    public function test_system_prompt_goes_where_format_expects(string $vendor, bool $search, array $capabilities, \Closure $pick, array $expected): void
+    {
+        $body = $this->provider()->request(
+            $this->offer($vendor, 'vendor/model', $capabilities),
+            [new Message(['role' => MessageRole::System, 'content' => 'Картриджи']), new Message(['role' => MessageRole::User, 'content' => 'Привет'])],
+            new ChatOptions(webSearch: $search),
+        )->body;
+
+        $this->assertSame($expected, $pick($body));
     }
 
     public static function usages(): array

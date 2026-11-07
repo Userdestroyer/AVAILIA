@@ -1,6 +1,6 @@
 <script setup>
 import { Link, router, usePage } from '@inertiajs/vue3';
-import { CircleHelp, History, LogOut, MessageSquare, Settings, Sparkle, SquarePen, ChevronRight, Trash2 } from 'lucide-vue-next';
+import { CircleHelp, Disc3, History, LogOut, MessageSquare, Settings, Sparkle, SquarePen, ChevronRight, Trash2 } from 'lucide-vue-next';
 import { computed, onBeforeUnmount, ref } from 'vue';
 import { useMediaQuery } from '@/composables/useMediaQuery';
 import { useSidebar } from '@/composables/useSidebar';
@@ -24,6 +24,11 @@ const hiddenChats = ref(new Set());
 const recentChats = computed(() => (page.props.recentChats ?? []).filter((chat) => !hiddenChats.value.has(chat.id)));
 const historyOpen = ref(true);
 const settingsOpen = ref(false);
+const settingsTab = ref('context');
+const openSettings = (tab) => {
+    settingsTab.value = tab;
+    settingsOpen.value = true;
+};
 const isActive = (id) => page.url === `/text/${id}` || window.location.pathname === `/text/${id}`;
 
 // Урна: первый клик — «Удалить?», второй (в течение 3 с) — удаляет
@@ -54,14 +59,14 @@ const deleteChat = async (id) => {
 
 <template>
     <CausticBackground :thinking="thinking" />
-    <SettingsModal v-model:open="settingsOpen" />
+    <SettingsModal v-model:open="settingsOpen" v-model:tab="settingsTab" />
 
     <!-- Под открытой шторкой всё размывается; тап мимо — закрыть -->
     <Transition enter-active-class="transition duration-200" enter-from-class="opacity-0" leave-active-class="transition duration-200" leave-to-class="opacity-0">
         <div v-if="!isDesktop && sidebarOpen" class="fixed inset-0 z-40 bg-black/30 backdrop-blur-md" @click="sidebarOpen = false" />
     </Transition>
 
-    <div class="flex h-dvh gap-6 p-2 md:p-6">
+    <div data-app-shell class="flex h-dvh gap-6 overflow-hidden p-2 md:p-6">
         <!-- На месте (md+) — матовость из шейдера; шторкой поверх контента — настоящее размытие -->
         <aside
             v-frost="isDesktop"
@@ -77,7 +82,7 @@ const deleteChat = async (id) => {
                     <span class="text-lg font-normal tracking-wide">AVAILIA</span>
                 </div>
                 <Link href="/text" class="glass-inset rounded-xl p-2 text-white/70 hover:text-white" title="Новый чат">
-                    <SquarePen class="size-4" :stroke-width="1.5" />
+                    <SquarePen class="vein size-4" :stroke-width="1.5" />
                 </Link>
             </div>
 
@@ -91,9 +96,9 @@ const deleteChat = async (id) => {
                     class="flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-[15px] text-white/80 hover:bg-white/5"
                     @click="historyOpen = !historyOpen"
                 >
-                    <History class="size-[18px]" :stroke-width="1.5" />
+                    <History class="vein size-[18px]" :stroke-width="1.5" />
                     История чатов
-                    <ChevronRight class="ml-auto size-4 text-white/40 transition" :class="{ 'rotate-90': historyOpen }" :stroke-width="1.5" />
+                    <ChevronRight class="vein ml-auto size-4 transition" :class="{ 'rotate-90': historyOpen }" :stroke-width="1.5" />
                 </button>
             </nav>
 
@@ -131,21 +136,30 @@ const deleteChat = async (id) => {
                 <button
                     type="button"
                     class="flex w-full items-center gap-3 rounded-2xl px-4 py-2.5 text-[15px] text-white/80 hover:bg-white/5"
-                    @click="settingsOpen = true"
+                    @click="openSettings('appearance')"
                 >
-                    <Settings class="size-[18px]" :stroke-width="1.5" />
+                    <Settings class="vein size-[18px]" :stroke-width="1.5" />
                     Настройки
                 </button>
                 <button type="button" class="flex w-full items-center gap-3 rounded-2xl px-4 py-2.5 text-[15px] text-white/80 hover:bg-white/5">
-                    <CircleHelp class="size-[18px]" :stroke-width="1.5" />
+                    <CircleHelp class="vein size-[18px]" :stroke-width="1.5" />
                     Помощь
                 </button>
 
-                <div class="mt-2 flex items-center gap-3 border-t border-white/10 px-4 pt-3 pb-1">
-                    <div class="min-w-0">
-                        <div class="truncate text-sm">{{ user.username }}</div>
-                        <div class="text-xs text-white/50">{{ user.plan.name }}</div>
-                    </div>
+                <div class="mt-2 flex items-center gap-1 border-t border-white/10 pt-2">
+                    <!-- Профиль: «Обо мне» — картриджи контекста -->
+                    <button
+                        type="button"
+                        class="flex min-w-0 flex-1 items-center gap-3 rounded-2xl px-4 py-1.5 text-left hover:bg-white/5"
+                        title="Обо мне — картриджи контекста"
+                        @click="openSettings('context')"
+                    >
+                        <Disc3 class="vein size-[18px] shrink-0" :stroke-width="1.5" />
+                        <span class="min-w-0">
+                            <span class="block truncate text-sm">{{ user.username }}</span>
+                            <span class="block text-xs text-white/50">{{ user.plan.name }} · Обо мне</span>
+                        </span>
+                    </button>
                     <Link
                         href="/logout"
                         method="post"
@@ -153,7 +167,7 @@ const deleteChat = async (id) => {
                         class="ml-auto rounded-lg p-1.5 text-white/50 hover:bg-white/5 hover:text-white"
                         title="Выйти"
                     >
-                        <LogOut class="size-4" :stroke-width="1.5" />
+                        <LogOut class="vein size-4" :stroke-width="1.5" />
                     </Link>
                 </div>
             </div>

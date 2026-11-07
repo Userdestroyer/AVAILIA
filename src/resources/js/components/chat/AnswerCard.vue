@@ -31,7 +31,7 @@ const finished = () => !['pending', 'streaming'].includes(props.answer.status) &
                 <LoaderCircle v-if="search.status === 'searching'" class="size-3.5 shrink-0 animate-spin text-cool-soft" :stroke-width="2" />
                 <Check v-else-if="search.status === 'done'" class="size-3.5 shrink-0 text-emerald-300" :stroke-width="2" />
                 <X v-else class="size-3.5 shrink-0 text-hot-soft" :stroke-width="2" />
-                <Globe class="size-3.5 shrink-0 text-white/40" :stroke-width="1.5" />
+                <Globe class="vein size-3.5 shrink-0" :stroke-width="1.5" />
                 <span class="truncate">{{ search.query || 'Ищу в интернете…' }}</span>
             </li>
         </ul>

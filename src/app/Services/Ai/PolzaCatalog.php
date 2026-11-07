@@ -71,6 +71,9 @@ class PolzaCatalog
             array_intersect(['reasoning', 'reasoning_effort'], $parameters) ? Capability::Reasoning->value : null,
             in_array('image', $inputs, true) ? Capability::Images->value : null,
             in_array('file', $inputs, true) ? Capability::Files->value : null,
+            // Polza ищет сама (polza:web_search) с любой моделью: умеющей вызывать функции — сколько
+            // та решит, остальным — один поиск до вызова
+            Capability::WebSearch->value,
         ]));
     }
 }

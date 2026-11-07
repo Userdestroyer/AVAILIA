@@ -4,6 +4,7 @@ namespace Tests\Feature\Chat;
 
 use App\Enums\MessageRole;
 use App\Enums\MessageStatus;
+use App\Jobs\GenerateChatTitle;
 use App\Models\AiModel;
 use App\Models\Chat;
 use App\Models\Plan;
@@ -13,24 +14,27 @@ use App\Services\Ai\ProviderRegistry;
 use App\Models\User;
 use Database\Seeders\DatabaseSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Redis;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\TestDox;
+use Tests\Concerns\CapturesStreamJobs;
 use Tests\TestCase;
 
 class SendMessageTest extends TestCase
 {
-    use RefreshDatabase;
+    use CapturesStreamJobs, RefreshDatabase;
 
     protected string $seeder = DatabaseSeeder::class;
 
     protected bool $seed = true;
 
     #[Group('D1')]
-    #[TestDox('Сообщение создаёт чат и ответ в ожидании, а в Redis уходит стрим-задание без ключа провайдера')]
+    #[TestDox('Сообщение создаёт чат и ответ в ожидании, в Redis уходит стрим-задание без ключа провайдера, название — в фон')]
     public function test_message_starts_stream_job(): void
     {
         config(['ai.providers.proxyapi.key' => 'provider-secret-key']);
+        Queue::fake();
         $jobs = $this->captureStreamJobs();
         $model = AiModel::where('slug', 'claude-sonnet-5-5')->first();
 
@@ -52,6 +56,29 @@ class SendMessageTest extends TestCase
         $this->assertTrue($payload['body']['stream']);
         $this->assertSame([['role' => 'user', 'content' => 'Привет']], $payload['body']['messages']);
         $this->assertStringNotContainsString('provider-secret-key', json_encode($payload));
+
+        // Название нового чата придумывает сервисная модель фоном; в уже начатом чате — нет
+        Queue::assertPushed(GenerateChatTitle::class, fn ($job) => $job->chatId === $chat->id);
+        $this->postJson('/text/messages', ['chat_id' => $chat->id, 'ai_model_ids' => [$model->id], 'content' => 'Ещё'])->assertCreated();
+        Queue::assertPushed(GenerateChatTitle::class, 1);
+    }
+
+    #[Group('D1')]
+    #[TestDox('Скорость глазами человека пишется в свой ответ один раз; в чужой — нельзя')]
+    public function test_client_ttft_is_recorded_once_for_own_answer(): void
+    {
+        $chat = User::factory()->create()->chats()->create();
+        $question = $chat->messages()->create(['role' => MessageRole::User, 'content' => 'Вопрос']);
+        $answer = $chat->messages()->create(['parent_id' => $question->id, 'role' => MessageRole::Assistant, 'status' => MessageStatus::Done]);
+
+        $this->actingAs(User::factory()->create())
+            ->postJson("/text/messages/{$answer->id}/metrics", ['client_ttft_ms' => 1])
+            ->assertNotFound();
+
+        $this->actingAs($chat->user);
+        $this->postJson("/text/messages/{$answer->id}/metrics", ['client_ttft_ms' => 820])->assertNoContent();
+        $this->postJson("/text/messages/{$answer->id}/metrics", ['client_ttft_ms' => 5])->assertNoContent();
+        $this->assertSame(820, $answer->fresh()->client_ttft_ms);
     }
 
     #[Group('D1')]
@@ -218,19 +245,4 @@ class SendMessageTest extends TestCase
     /**
      * Подменяет Redis и возвращает функцию, отдающую список [ключ, разобранное задание].
      */
-    private function captureStreamJobs(): \Closure
-    {
-        $captured = [];
-
-        Redis::shouldReceive('connection')->with('gateway')->andReturnSelf();
-        Redis::shouldReceive('setex')->withArgs(function ($key, $ttl, $payload) use (&$captured) {
-            $captured[] = [$key, json_decode($payload, true)];
-
-            return true;
-        });
-
-        return function () use (&$captured) {
-            return $captured;
-        };
-    }
 }

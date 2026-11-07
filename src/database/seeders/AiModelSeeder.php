@@ -25,6 +25,18 @@ class AiModelSeeder extends Seeder
      * каталога возможностей нет, ставим те же. Температуру принимают только Gemini и Grok:
      * рассуждающие Claude и GPT её не берут.
      */
+    /**
+     * Поиск: у Polza — у всех моделей, со всеми ограничениями; у proxyapi — как проверено запросами
+     * (Claude соблюдает лимит и домены, GPT — только домены, Gemini — только лимит, у Grok поиска нет).
+     */
+    private const SEARCH = [
+        'proxyapi' => [
+            'anthropic' => ['max_uses' => true, 'domains' => true],
+            'openai' => ['max_uses' => false, 'domains' => true],
+            'google' => ['max_uses' => true, 'domains' => false],
+        ],
+    ];
+
     private const CAPABILITIES = [
         'anthropic' => [Capability::Reasoning, Capability::Images, Capability::Files],
         'google' => [Capability::Temperature, Capability::Reasoning, Capability::Images, Capability::Files],
@@ -108,7 +120,9 @@ class AiModelSeeder extends Seeder
                 );
 
                 foreach ($offers as $providerSlug => [$externalId, $input, $output, $cacheRead, $cacheWrite, $webSearch]) {
-                    $offer = ProviderModel::updateOrCreate(
+                    // Только создаём недостающее: сидер гоняется при каждом обновлении и не должен
+                    // затирать цены и возможности, поправленные в админке или из каталога Polza
+                    $offer = ProviderModel::firstOrCreate(
                         ['provider_id' => $providers[$providerSlug], 'ai_model_id' => $model->id],
                         [
                             'external_id' => $externalId,
@@ -122,9 +136,22 @@ class AiModelSeeder extends Seeder
                             'price_currency' => 'RUB',
                         ],
                     );
-                    $offer->syncCapabilities(array_fill_keys(array_map(fn (Capability $c) => $c->value, self::CAPABILITIES[$vendorSlug]), null));
+                    if ($offer->wasRecentlyCreated) {
+                        $offer->syncCapabilities($this->capabilities($providerSlug, $vendorSlug));
+                    }
                 }
             }
         }
+    }
+
+    /**
+     * @return array<string, array<string, mixed>|null>
+     */
+    private function capabilities(string $provider, string $vendor): array
+    {
+        $capabilities = array_fill_keys(array_map(fn (Capability $c) => $c->value, self::CAPABILITIES[$vendor]), null);
+        $search = $provider === 'polza' ? Capability::WebSearch->defaults() : (self::SEARCH[$provider][$vendor] ?? null);
+
+        return $search ? [...$capabilities, Capability::WebSearch->value => $search] : $capabilities;
     }
 }

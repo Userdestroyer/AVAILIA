@@ -6,11 +6,14 @@ use App\Enums\AiModelType;
 use App\Enums\Capability;
 use App\Http\Controllers\Controller;
 use App\Models\AiModel;
+use App\Models\AppSetting;
 use App\Models\Provider;
 use App\Models\ProviderModel;
 use App\Models\Vendor;
 use App\Services\Ai\PolzaCatalog;
 use App\Services\Ai\ProviderRegistry;
+use App\Services\Ai\ServiceModel;
+use App\Services\Stats\SpeedStats;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Arr;
 use Illuminate\Http\Request;
@@ -28,7 +31,7 @@ class AdminController extends Controller
 {
     public function __construct(private ProviderRegistry $providers) {}
 
-    public function index(): Response
+    public function index(ServiceModel $service): Response
     {
         $providers = Provider::orderBy('sort')->withCount(['offerings' => fn ($query) => $query->where('is_active', true)])->get();
 
@@ -40,6 +43,9 @@ class AdminController extends Controller
                 'has_key' => filled(config("ai.providers.{$provider->slug}.key")),
             ]),
             'activeProvider' => $this->providers->activeSlug(),
+            'serviceModel' => $service->model()?->id,
+            // Статистика тяжелее остального — догружается после открытия страницы
+            'speed' => Inertia::defer(fn () => (new SpeedStats)->summary()),
             'vendors' => Vendor::orderBy('sort')->get(['id', 'slug', 'name', 'product']),
             'capabilities' => array_map(fn (Capability $c) => ['value' => $c->value, 'label' => $c->label()], Capability::cases()),
             'models' => AiModel::with(['offerings.provider', 'offerings.capabilities'])->orderBy('vendor_id')->orderBy('sort')->get()->map(fn (AiModel $model) => [
@@ -54,6 +60,16 @@ class AdminController extends Controller
     {
         $validated = $request->validate(['slug' => ['required', Rule::exists('providers', 'slug')]]);
         $this->providers->activate(Provider::where('slug', $validated['slug'])->firstOrFail());
+
+        return response()->noContent();
+    }
+
+    public function serviceModel(Request $request): HttpResponse
+    {
+        $validated = $request->validate([
+            'ai_model_id' => ['required', Rule::exists('ai_models', 'id')->where('is_active', true)->where('type', AiModelType::Text->value)],
+        ]);
+        AppSetting::put(ServiceModel::SETTING, (int) $validated['ai_model_id']);
 
         return response()->noContent();
     }

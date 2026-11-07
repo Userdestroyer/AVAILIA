@@ -46,7 +46,7 @@ onBeforeUnmount(() => clearTimeout(timer));
     <div class="flex items-center gap-0.5">
         <button
             type="button"
-            class="rounded-lg p-1.5 text-white/40 transition hover:bg-white/5 hover:text-white"
+            class="vein rounded-lg p-1.5 transition hover:text-white"
             :title="copied ? 'Скопировано' : 'Скопировать'"
             :disabled="!text"
             @click="copy"
@@ -58,7 +58,7 @@ onBeforeUnmount(() => clearTimeout(timer));
             v-if="deletable"
             type="button"
             class="flex items-center gap-1 rounded-lg p-1.5 text-xs transition"
-            :class="confirming ? 'bg-hot/20 px-2 text-hot-soft' : 'text-white/40 hover:bg-white/5 hover:text-hot-soft'"
+            :class="confirming ? 'bg-hot/20 px-2 text-hot-soft' : 'vein hover:text-hot-soft'"
             :title="confirming ? 'Нажмите ещё раз, чтобы удалить' : 'Удалить'"
             @click="remove"
         >

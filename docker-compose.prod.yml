@@ -97,6 +97,21 @@ services:
     networks:
       - availia
 
+  # Воркер очереди: фоновые задачи после ответа (название чата и т.п.).
+  # Код держит в памяти — после обновления его перезапускает ./project.sh update (queue:restart)
+  queue:
+    image: availia/php:latest
+    restart: unless-stopped
+    working_dir: /var/www/html
+    volumes:
+      - ./src:/var/www/html:delegated
+    command: ["php", "artisan", "queue:work", "--tries=3", "--timeout=120", "--max-time=3600"]
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - availia
+
   # Планировщик: обновление курсов валют (ЦБ доступен с российского VPS)
   scheduler:
     image: availia/php:latest

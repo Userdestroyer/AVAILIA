@@ -48,10 +48,18 @@ DOMPurify.addHook('afterSanitizeAttributes', (node) => {
     }
 });
 
+// Кнопка «скопировать» у блока кода: добавляется в уже очищенный HTML (наша разметка, не из ответа);
+// клик ловит MarkdownContent по data-copy-code
+const ICON = 'viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"';
+const COPY_BUTTON = '<button type="button" class="code-copy" data-copy-code title="Скопировать код">'
+    + `<svg class="code-copy-idle" ${ICON} stroke-width="1.5"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>`
+    + `<svg class="code-copy-done" ${ICON} stroke-width="2"><path d="M20 6 9 17l-5-5"/></svg>`
+    + '</button>';
+
 /**
  * Markdown ответа модели → безопасный HTML. Санитайз обязателен: ответ может содержать
  * любой HTML (в том числе подсунутый через промпт), а мы вставляем его через v-html.
  */
 export function renderMarkdown(source) {
-    return DOMPurify.sanitize(marked.parse(source ?? ''));
+    return DOMPurify.sanitize(marked.parse(source ?? '')).replaceAll('<pre>', `<pre>${COPY_BUTTON}`);
 }

@@ -3,6 +3,7 @@
 namespace App\Services\Ai;
 
 use App\Enums\Capability;
+use App\Enums\MessageRole;
 use App\Models\ProviderModel;
 use App\Models\Message;
 use App\Services\Ai\Data\ChatOptions;
@@ -47,12 +48,27 @@ abstract class AiProvider
     }
 
     /**
-     * Как у этого агрегатора искать в интернете моделью: формат API и какие параметры
-     * он реально соблюдает. null — поиск недоступен, запрос пойдёт без него.
+     * Как искать в интернете этой моделью: формат API (знание провайдера) и какие ограничения
+     * она соблюдает (возможность web_search в БД). null — поиска нет, запрос пойдёт без него.
      *
      * @return array{format: string, max_uses: bool, domains: bool}|null
      */
     public function webSearch(ProviderModel $offer): ?array
+    {
+        $capability = $offer->capability(Capability::WebSearch);
+        $format = $capability ? $this->searchFormat($offer) : null;
+
+        return $format ? [
+            'format' => $format,
+            'max_uses' => (bool) $capability->setting('max_uses'),
+            'domains' => (bool) $capability->setting('domains'),
+        ] : null;
+    }
+
+    /**
+     * В каком формате API у этого агрегатора модель умеет искать; null — не умеет нигде.
+     */
+    protected function searchFormat(ProviderModel $offer): ?string
     {
         return null;
     }
@@ -113,8 +129,12 @@ abstract class AiProvider
             $tool['filters'] = ['allowed_domains' => $options->allowedDomains];
         }
 
+        [$system, $messages] = $this->splitSystem($messages);
+
         $body = array_filter([
             'model' => $this->modelId($offer),
+            // Системный промпт в Responses — отдельным полем
+            'instructions' => $system,
             'input' => $this->formatMessages($messages),
             'max_output_tokens' => $this->maxTokens($offer, $options),
             'temperature' => $this->temperature($offer, $options),
@@ -148,11 +168,20 @@ abstract class AiProvider
             $tool['allowed_domains'] = $options->allowedDomains;
         }
 
+        [$system, $messages] = $this->splitSystem($messages);
+        // Рассуждения Claude: адаптивная глубина с уровнем усилий (проверено на proxyapi, 2026-11-08).
+        // С ними температура не задаётся — Anthropic её отклоняет
+        $effort = $this->reasoningEffort($offer, $options);
+
         $body = array_filter([
             'model' => $this->modelId($offer),
+            // В Messages системный промпт — отдельным полем, ролью system сообщение быть не может
+            'system' => $system,
             // В Messages лимит ответа обязателен
             'max_tokens' => $this->maxTokens($offer, $options) ?? 4096,
-            'temperature' => $this->temperature($offer, $options),
+            'thinking' => $effort ? ['type' => 'adaptive'] : null,
+            'output_config' => $effort ? ['effort' => $effort] : null,
+            'temperature' => $effort ? null : $this->temperature($offer, $options),
             'messages' => $this->formatMessages($messages),
             'stream' => $stream ?: null,
             'tools' => [$tool],
@@ -172,12 +201,12 @@ abstract class AiProvider
      *
      * @param  iterable<Message>  $messages
      */
-    public function complete(ProviderModel $offer, iterable $messages, ChatOptions $options = new ChatOptions): Completion
+    public function complete(ProviderModel $offer, iterable $messages, ChatOptions $options = new ChatOptions, int $timeout = 120): Completion
     {
         $request = $this->chatRequest($offer, $messages, $options);
 
         $data = Http::withHeaders($request->headers)
-            ->timeout(120)
+            ->timeout($timeout)
             ->post($request->url, $request->body)
             ->throw()
             ->json();
@@ -185,6 +214,7 @@ abstract class AiProvider
         return new Completion(
             content: $data['choices'][0]['message']['content'] ?? '',
             usage: $this->parseUsage($data['usage'] ?? []),
+            rawUsage: $data['usage'] ?? [],
         );
     }
 
@@ -267,6 +297,28 @@ abstract class AiProvider
     protected function extraBody(ProviderModel $offer, ChatOptions $options, bool $stream): array
     {
         return [];
+    }
+
+    /**
+     * Системные сообщения — отдельно (для форматов, где у системного промпта своё поле).
+     *
+     * @param  iterable<Message>  $messages
+     * @return array{0: ?string, 1: list<Message>}
+     */
+    protected function splitSystem(iterable $messages): array
+    {
+        $system = [];
+        $rest = [];
+
+        foreach ($messages as $message) {
+            if ($message->role === MessageRole::System) {
+                $system[] = (string) $message->content;
+            } else {
+                $rest[] = $message;
+            }
+        }
+
+        return [$system ? implode("\n\n", $system) : null, $rest];
     }
 
     /**
