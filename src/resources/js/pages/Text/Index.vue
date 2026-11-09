@@ -1,9 +1,9 @@
 <script setup>
 import { Head, router, usePage } from '@inertiajs/vue3';
 import {
-    ArrowUp, Brain, Disc3, Globe, Hash, Info, MessageSquare, Paperclip, Plus, RotateCcw, SlidersHorizontal, Sparkle, Users, X, Zap,
+    ArrowUp, Brain, Disc3, Globe, Hash, Info, MessageSquare, Paperclip, Plus, RotateCcw, SlidersHorizontal, Users, X, Zap,
 } from 'lucide-vue-next';
-import { computed, nextTick, onBeforeUnmount, ref, toRef, watch, watchEffect } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, toRef, watch, watchEffect } from 'vue';
 import AppLayout from '@/layouts/AppLayout.vue';
 import AnswerCard from '@/components/chat/AnswerCard.vue';
 import AnswerCarousel from '@/components/chat/AnswerCarousel.vue';
@@ -11,6 +11,8 @@ import MessageActions from '@/components/chat/MessageActions.vue';
 import GlassToggle from '@/components/GlassToggle.vue';
 import ModelPicker from '@/components/ModelPicker.vue';
 import ModeShell from '@/components/ModeShell.vue';
+import EmptyHero from '@/components/chat/EmptyHero.vue';
+import UsageRing from '@/components/chat/UsageRing.vue';
 import VendorIcon from '@/components/VendorIcon.vue';
 import { fuzzy, useComposerMenu } from '@/composables/useComposerMenu';
 import { useChatPreferences } from '@/composables/useChatPreferences';
@@ -166,13 +168,74 @@ const turns = computed(() => {
     return result;
 });
 
+// ── Оболочка приложения (App Shell) ────────────────────
+// Каркас (панели, поле ввода, настройки) остаётся на месте, меняется только лента: клик по чату
+// сразу её очищает и показывает полосу загрузки, «Новый чат» — пустой экран без ожидания сервера
+const switching = ref(false);
+const isEmpty = computed(() => !messages.value.length && !switching.value);
+
+// Только настоящий переход: предзагрузка (наведение, вкладки режимов) и частичные перезагрузки — не в счёт
+const chatVisit = (visit) => visit.method === 'get' && !visit.prefetch && !visit.only?.length
+    && /^\/text(\/|$)/.test(visit.url.pathname) && visit.url.pathname !== window.location.pathname;
+
+const stopStart = router.on('start', (event) => {
+    if (!chatVisit(event.detail.visit)) return;
+    closeAllStreams();
+    messages.value = [];
+    chatId.value = null;
+    // Новый чат пуст и так — показываем его сразу; чужой чат — полосу загрузки
+    switching.value = event.detail.visit.url.pathname !== '/text';
+});
+const stopFinish = router.on('finish', () => (switching.value = false));
+onBeforeUnmount(() => {
+    stopStart();
+    stopFinish();
+});
+
+// Длинный чат рендерится в два шага: сначала последние ходы (их и видно), остальное — когда браузер
+// свободен. Markdown сотни сообщений разом блокировал бы ввод и давал мерцание при открытии
+const FIRST_TURNS = 12;
+const renderFrom = ref(0);
+const visibleTurns = computed(() => turns.value.slice(renderFrom.value));
+const idle = window.requestIdleCallback ?? ((fn) => setTimeout(fn, 50));
+let renderToken = 0;
+
+const showChat = () => {
+    const token = ++renderToken;
+    renderFrom.value = Math.max(0, turns.value.length - FIRST_TURNS);
+    scrollToBottom(false);
+    if (renderFrom.value) {
+        idle(() => {
+            if (token !== renderToken) return;
+            renderFrom.value = 0;
+            scrollToBottom(false);
+        });
+    }
+};
+onMounted(showChat);
+
 // Переход между чатами (или на «Новый чат») — тот же компонент с новыми props
 watch(() => props.messages, (value) => {
     closeAllStreams();
     chatId.value = props.chat?.id ?? null;
     messages.value = [...value];
-    scrollToBottom(false);
+    attachedPlates.value = initialPlates();
+    showChat();
 });
+
+// Поле ввода переезжает между центром (пустой чат) и низом плавно: FLIP — запоминаем, где было,
+// и анимируем только transform от старого места к новому (60 fps, без перерасчёта раскладки)
+const composer = ref(null);
+let composerTop = null;
+watch(isEmpty, () => (composerTop = composer.value?.getBoundingClientRect().top ?? null), { flush: 'pre' });
+watch(isEmpty, () => {
+    const el = composer.value;
+    if (!el || composerTop === null) return;
+    const shift = composerTop - el.getBoundingClientRect().top;
+    if (Math.abs(shift) > 1) {
+        el.animate([{ transform: `translateY(${shift}px)` }, { transform: 'none' }], { duration: 520, easing: 'cubic-bezier(0.32, 0.72, 0, 1)' });
+    }
+}, { flush: 'post' });
 
 const scrollToBottom = async (smooth = true) => {
     await nextTick();
@@ -188,6 +251,23 @@ const error = ref(null);
 
 const busy = computed(() => sending.value || activeStreams.value > 0);
 
+// ── Энергия (лимиты) ───────────────────────────────────
+// Знаем заполнение окон заранее — исчерпанное блокирует отправку сразу, не дожидаясь отказа сервера
+const page = usePage();
+const usage = computed(() => page.props.usage);
+const exhausted = computed(() => {
+    for (const [kind, label] of [['session', 'сессии'], ['week', 'недели']]) {
+        const window = usage.value?.windows?.text?.[kind];
+        if (window?.limit && window.spent >= window.limit) {
+            const at = new Date(window.resets_at);
+            const sameDay = at.toDateString() === new Date().toDateString();
+            const when = at.toLocaleString('ru', sameDay ? { hour: '2-digit', minute: '2-digit' } : { weekday: 'short', hour: '2-digit', minute: '2-digit' });
+            return `Энергия ${label} закончилась — восстановится ${sameDay ? 'в ' : ''}${when}`;
+        }
+    }
+    return null;
+});
+
 // Огонь горит всю генерацию: от отправки, пока пишет хоть одна модель
 watchEffect(() => {
     thinking.value = busy.value;
@@ -196,9 +276,9 @@ watchEffect(() => {
 // ── Контекст запроса: картриджи (#) и призванные модели (@) ──
 // В начатом чате — те же картриджи, что у последнего вопроса; в новом — закреплённые
 const plateExists = (id) => props.plates.some((p) => p.id === id);
-const attachedPlates = ref(
-    (props.chat?.plate_ids?.length ? props.chat.plate_ids : props.plates.filter((p) => p.is_pinned).map((p) => p.id)).filter(plateExists),
-);
+const initialPlates = () =>
+    (props.chat?.plate_ids?.length ? props.chat.plate_ids : props.plates.filter((p) => p.is_pinned).map((p) => p.id)).filter(plateExists);
+const attachedPlates = ref(initialPlates());
 const attached = computed(() => attachedPlates.value.map((id) => props.plates.find((p) => p.id === id)).filter(Boolean));
 const attachedTokens = computed(() => attached.value.reduce((sum, p) => sum + p.tokens, 0));
 const attachPlates = (ids) => (attachedPlates.value = [...new Set([...attachedPlates.value, ...ids])]);
@@ -272,6 +352,10 @@ let localSeq = 0;
 const send = async () => {
     const content = message.value.trim();
     if (!content || busy.value) return;
+    if (exhausted.value) {
+        error.value = exhausted.value;
+        return;
+    }
 
     error.value = null;
     sending.value = true;
@@ -308,6 +392,8 @@ const send = async () => {
         messages.value.splice(local, 1);
         message.value = content;
         error.value = e.message;
+        // Отказ мог быть из-за лимита — кольцо энергии должно показать актуальное
+        router.reload({ only: ['usage'] });
         return;
     } finally {
         sending.value = false;
@@ -370,7 +456,8 @@ const stream = (token, answer, sentAt) => {
         closeStream(source);
         // Замер — фоном, после ответа; не дошёл — не страшно
         if (clientTtft !== null) postJson(`/text/messages/${answer.id}/metrics`, { client_ttft_ms: clientTtft }).catch(() => {});
-        if (!sources.size) router.reload({ only: ['recentChats'] });
+        // Ответы дописаны — обновляем историю (название чата) и энергию
+        if (!sources.size) router.reload({ only: ['recentChats', 'usage'] });
     });
 
     source.addEventListener('fail', (event) => {
@@ -429,34 +516,26 @@ const onKeydown = (event) => {
     <Head title="Текст" />
 
     <ModeShell>
-        <!-- Пустое состояние -->
-        <div v-if="!messages.length" class="flex flex-1 flex-col items-center justify-center px-4 text-center">
-            <Sparkle
-                class="size-12 fill-current transition-colors duration-[2000ms]"
-                :class="thinking ? 'text-hot drop-shadow-[0_0_24px_rgba(255,138,76,0.7)]' : 'text-cool drop-shadow-[0_0_24px_rgba(91,140,255,0.7)]'"
-                :stroke-width="0"
-            />
-            <h1 class="mt-6 text-3xl font-extralight tracking-tight text-white/90 md:text-4xl">
-                {{ thinking ? 'Думаю…' : 'Чем могу помочь?' }}
-            </h1>
-            <p class="mt-4 text-base font-light text-white/60 md:text-lg">
-                Задайте вопрос. <span class="text-white/80">@модель</span> — спросить другую, <span class="text-white/80">#тег</span> — подключить контекст о себе
-            </p>
+        <!-- Пустой чат: логотип над полем ввода, всё по центру экрана -->
+        <div v-if="isEmpty" class="flex min-h-0 flex-1 flex-col items-center justify-end px-4 pb-6 text-center md:pb-10">
+            <EmptyHero />
         </div>
 
         <!-- Переписка: одно стекло на всю ленту, сообщения скроллятся внутри -->
         <div v-else v-frost class="glass relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-[22px] md:rounded-[28px]">
+            <!-- Чат грузится: лента уже пустая, каркас на месте -->
+            <div v-if="switching" class="loading-bar absolute inset-x-6 top-0 z-10 h-0.5 overflow-hidden rounded-full" aria-label="Загружаю чат" />
             <div class="scroll-edge top-0" aria-hidden="true" />
             <div class="scroll-edge bottom-0 [--edge-to:top]" aria-hidden="true" />
             <div ref="scroller" class="scrollbar-glass flex-1 space-y-4 overflow-y-auto px-2 py-3 md:space-y-6 md:px-6 md:py-8">
-                <template v-for="(turn, index) in turns" :key="turn.question?.id ?? index">
+                <template v-for="(turn, index) in visibleTurns" :key="turn.question?.id ?? `t${renderFrom + index}`">
                     <div v-if="turn.question" class="group flex flex-col items-end gap-0.5">
                         <!-- Какие картриджи ушли с вопросом -->
                         <div v-if="turn.question.context?.length" class="mb-0.5 flex max-w-[85%] flex-wrap justify-end gap-1">
                             <span
                                 v-for="item in turn.question.context"
                                 :key="item.plate_id"
-                                class="flex items-center gap-1 text-[11px] text-white/45"
+                                class="flex items-center gap-1 text-[11px] text-fg/45"
                                 :title="`Картридж «${item.title}» был подключён к вопросу`"
                             >
                                 <Disc3 class="vein size-3" :stroke-width="1.5" />
@@ -485,15 +564,15 @@ const onKeydown = (event) => {
         <p v-if="error" class="px-4 text-sm text-hot-soft">{{ error }}</p>
 
         <!-- Поле ввода -->
-        <div class="relative">
+        <div ref="composer" class="relative">
             <!-- Подсказки: @ — модели, # — теги и картриджи -->
             <div v-if="menuOpen" class="absolute inset-x-0 bottom-full z-20 mb-2 md:right-auto md:w-[26rem]">
-                <ul class="scrollbar-glass max-h-72 overflow-y-auto rounded-2xl border border-white/10 bg-[#2c3445]/95 p-1 shadow-2xl backdrop-blur-xl">
+                <ul class="scrollbar-glass max-h-72 overflow-y-auto rounded-2xl border border-fg/10 bg-(--popover-bg) p-1 shadow-2xl backdrop-blur-xl">
                     <li v-for="(item, i) in menuItems" :key="item.key">
                         <button
                             type="button"
                             class="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left transition"
-                            :class="i === menuIndex ? 'bg-white/10' : 'hover:bg-white/5'"
+                            :class="i === menuIndex ? 'bg-fg/10' : 'hover:bg-fg/5'"
                             @mousedown.prevent="pickFromMenu(menu.take(item))"
                             @mouseenter="menuIndex = i"
                         >
@@ -502,7 +581,7 @@ const onKeydown = (event) => {
                             <Disc3 v-else class="size-4 shrink-0 text-cool-soft" :stroke-width="1.5" />
                             <span class="min-w-0 flex-1">
                                 <span class="block truncate text-sm">{{ item.label }}</span>
-                                <span v-if="item.hint" class="block truncate text-xs text-white/45">{{ item.hint }}</span>
+                                <span v-if="item.hint" class="block truncate text-xs text-fg/45">{{ item.hint }}</span>
                             </span>
                         </button>
                     </li>
@@ -525,16 +604,16 @@ const onKeydown = (event) => {
                     <span
                         v-for="p in attached"
                         :key="`p${p.id}`"
-                        class="glass-inset flex items-center gap-1 rounded-full py-0.5 pr-0.5 pl-1 text-xs text-white/75"
+                        class="glass-inset flex items-center gap-1 rounded-full py-0.5 pr-0.5 pl-1 text-xs text-fg/75"
                         :title="`≈ ${p.tokens} токенов к каждому запросу`"
                     >
                         <Disc3 class="size-3.5 text-cool-soft" :class="{ 'animate-spin [animation-duration:2.4s]': busy }" :stroke-width="1.5" />
                         {{ p.title }}
-                        <button type="button" class="rounded-full p-0.5 text-white/40 hover:text-white" title="Не подключать к этому чату" @click="detachPlate(p.id)">
+                        <button type="button" class="rounded-full p-0.5 text-fg/40 hover:text-fg" title="Не подключать к этому чату" @click="detachPlate(p.id)">
                             <X class="size-3" :stroke-width="2" />
                         </button>
                     </span>
-                    <span v-if="attached.length" class="ml-auto pr-1 text-[11px] text-white/35 tabular-nums" title="Примерно столько токенов картриджи добавят к каждому запросу">
+                    <span v-if="attached.length" class="ml-auto pr-1 text-[11px] text-fg/35 tabular-nums" title="Примерно столько токенов картриджи добавят к каждому запросу">
                         ≈ {{ attachedTokens }} ток.
                     </span>
                 </div>
@@ -543,7 +622,7 @@ const onKeydown = (event) => {
                     <button type="button" class="vein p-1.5 md:p-2" title="Прикрепить файл (скоро)" disabled>
                         <Paperclip class="size-[18px] md:size-5" :stroke-width="1.5" />
                     </button>
-                    <button v-if="plates.length" type="button" class="vein p-1.5 hover:text-white md:p-2" title="Подключить контекст (#)" @click="insertTrigger('#')">
+                    <button v-if="plates.length" type="button" class="vein p-1.5 hover:text-fg md:p-2" title="Подключить контекст (#)" @click="insertTrigger('#')">
                         <Hash class="size-[18px] md:size-5" :stroke-width="1.5" />
                     </button>
                     <textarea
@@ -552,17 +631,18 @@ const onKeydown = (event) => {
                         rows="1"
                         :placeholder="placeholder"
                         :enterkeyhint="isTouch ? 'enter' : 'send'"
-                        class="max-h-[200px] flex-1 resize-none bg-transparent py-1.5 text-[15px] font-light outline-none placeholder:text-white/45 md:py-2 md:text-[17px]"
+                        class="max-h-[200px] flex-1 resize-none bg-transparent py-1.5 text-[15px] font-light outline-none placeholder:text-fg/45 md:py-2 md:text-[17px]"
                         @keydown="onKeydown"
                         @input="menu.detect()"
                         @click="menu.detect()"
                         @keyup="['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes($event.key) && menu.detect()"
                         @blur="menu.close()"
                     />
+                    <UsageRing :usage="usage" :rate="page.props.energyRate" />
                     <button
                         type="submit"
-                        :disabled="!message.trim() || busy"
-                        class="flex size-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-b from-[#6b9bff] to-cool text-white shadow-lg shadow-cool/40 transition disabled:opacity-40 md:size-11"
+                        :disabled="!message.trim() || busy || !!exhausted"
+                        class="flex size-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-b from-[#6b9bff] to-cool text-white shadow-(--send-glow) transition disabled:opacity-40 md:size-11"
                         title="Отправить"
                     >
                         <ArrowUp class="size-5" :stroke-width="2" />
@@ -571,13 +651,20 @@ const onKeydown = (event) => {
             </form>
         </div>
 
+        <!-- Вторая половина пустого экрана — поле ввода стоит ровно по центру; тут же подсказка -->
+        <div v-if="isEmpty" class="flex min-h-0 flex-1 flex-col items-center px-4 pt-3 text-center">
+            <p class="text-xs text-fg/45 md:text-sm">
+                <span class="text-fg/75">@модель</span> — спросить другую · <span class="text-fg/75">#тег</span> — подключить контекст о себе
+            </p>
+        </div>
+
         <!-- Настройки на узких экранах открываются кнопкой в верхней строке -->
         <template #actions>
             <button
                 v-frost
                 type="button"
                 class="glass shrink-0 rounded-full p-2 md:p-2.5 xl:hidden"
-                :class="{ 'ring-1 ring-white/40': showSettings }"
+                :class="{ 'ring-1 ring-fg/40': showSettings }"
                 title="Настройки модели"
                 @click="showSettings = !showSettings"
             >
@@ -609,7 +696,7 @@ const onKeydown = (event) => {
                         :disabled="mode.disabled"
                         :title="mode.title"
                         class="flex items-center justify-center gap-1.5 rounded-xl px-2 py-2 text-[13px] whitespace-nowrap transition disabled:cursor-default disabled:opacity-35"
-                        :class="requestMode === mode.value ? 'bg-white/14 text-white shadow-sm' : 'text-white/60 enabled:hover:text-white'"
+                        :class="requestMode === mode.value ? 'pill-active' : 'text-fg/60 enabled:hover:text-fg'"
                         @click="requestMode = mode.value"
                     >
                         <component :is="mode.icon" class="size-4" :stroke-width="1.5" />
@@ -632,7 +719,7 @@ const onKeydown = (event) => {
                             <button
                                 v-if="multiIds.length > 1"
                                 type="button"
-                                class="rounded-xl p-2 text-white/50 hover:bg-white/5 hover:text-white"
+                                class="rounded-xl p-2 text-fg/50 hover:bg-fg/5 hover:text-fg"
                                 title="Убрать модель"
                                 @click="removeModel(index)"
                             >
@@ -642,7 +729,7 @@ const onKeydown = (event) => {
                         <button
                             v-if="multiIds.length < MAX_MODELS"
                             type="button"
-                            class="flex w-full items-center justify-center gap-2 rounded-2xl border border-dashed border-white/15 py-2.5 text-sm text-white/60 transition hover:border-white/30 hover:text-white"
+                            class="flex w-full items-center justify-center gap-2 rounded-2xl border border-dashed border-fg/15 py-2.5 text-sm text-fg/60 transition hover:border-fg/30 hover:text-fg"
                             @click="addModel"
                         >
                             <Plus class="size-4" :stroke-width="1.5" />
@@ -657,7 +744,7 @@ const onKeydown = (event) => {
                 <label class="block">
                     <span class="flex items-center justify-between text-[15px]">
                         Лимит ответа, токенов
-                        <span class="text-white/90">{{ maxTokensLabel }}</span>
+                        <span class="text-fg/90">{{ maxTokensLabel }}</span>
                     </span>
                     <input
                         v-model.number="tokenStep"
@@ -680,7 +767,7 @@ const onKeydown = (event) => {
                         class="cursor-pointer bg-transparent text-right text-[15px] outline-none disabled:cursor-default disabled:opacity-40"
                         :title="deepThinking ? '' : 'Включите Deep Thinking'"
                     >
-                        <option v-for="e in EFFORTS" :key="e.value" :value="e.value" class="bg-[#2c3445]">{{ e.label }}</option>
+                        <option v-for="e in EFFORTS" :key="e.value" :value="e.value" class="bg-(--popover-bg)">{{ e.label }}</option>
                     </select>
                 </div>
 
@@ -695,13 +782,13 @@ const onKeydown = (event) => {
                             <button
                                 v-if="temperature !== null"
                                 type="button"
-                                class="rounded-md p-1 text-white/40 transition hover:text-white"
+                                class="rounded-md p-1 text-fg/40 transition hover:text-fg"
                                 title="Сбросить — как задумано моделью"
                                 @click="temperature = null"
                             >
                                 <RotateCcw class="size-3.5" :stroke-width="1.5" />
                             </button>
-                            <span class="tabular-nums" :class="temperature === null || !temperatureModels.length ? 'text-white/45' : 'text-white/90'">
+                            <span class="tabular-nums" :class="temperature === null || !temperatureModels.length ? 'text-fg/45' : 'text-fg/90'">
                                 {{ temperature === null ? 'авто' : Number(temperature).toFixed(1) }}
                             </span>
                         </span>
@@ -717,7 +804,7 @@ const onKeydown = (event) => {
                         :class="{ 'opacity-50': temperature === null }"
                         @input="temperature = Number($event.target.value)"
                     />
-                    <p v-if="temperatureHint" class="mt-2 text-xs leading-snug text-white/45">{{ temperatureHint }}</p>
+                    <p v-if="temperatureHint" class="mt-2 text-xs leading-snug text-fg/45">{{ temperatureHint }}</p>
                 </div>
 
                 <div class="vein-line my-4 h-px" />
@@ -734,7 +821,7 @@ const onKeydown = (event) => {
                         <div class="min-h-0 overflow-hidden">
                             <div class="space-y-3 pt-1 pb-1 pl-8">
                                 <div class="flex items-center justify-between gap-3">
-                                    <label for="search-limit" class="text-sm text-white/70">Поисков, не больше <span class="text-white/40">(1–{{ SEARCH_MAX }})</span></label>
+                                    <label for="search-limit" class="text-sm text-fg/70">Поисков, не больше <span class="text-fg/40">(1–{{ SEARCH_MAX }})</span></label>
                                     <input
                                         id="search-limit"
                                         :value="maxWebSearches"
@@ -749,21 +836,21 @@ const onKeydown = (event) => {
                                     />
                                 </div>
                                 <label class="block">
-                                    <span class="text-sm text-white/70">Только с сайтов</span>
+                                    <span class="text-sm text-fg/70">Только с сайтов</span>
                                     <input
                                         v-model="domainsInput"
                                         type="text"
                                         placeholder="cbr.ru, wikipedia.org"
-                                        class="glass-inset mt-1.5 w-full rounded-xl px-3 py-2 text-sm outline-none placeholder:text-white/30 focus:border-cool/60"
+                                        class="glass-inset mt-1.5 w-full rounded-xl px-3 py-2 text-sm outline-none placeholder:text-fg/30 focus:border-cool/60"
                                     />
                                 </label>
-                                <p v-for="hint in searchHints" :key="hint" class="text-xs leading-snug text-white/45">{{ hint }}</p>
+                                <p v-for="hint in searchHints" :key="hint" class="text-xs leading-snug text-fg/45">{{ hint }}</p>
                             </div>
                         </div>
                     </div>
 
                     <GlassToggle v-model="deepThinking" :icon="Brain" label="Deep Thinking" />
-                    <p v-if="reasoningHint" class="pl-8 text-xs leading-snug text-white/45">{{ reasoningHint }}</p>
+                    <p v-if="reasoningHint" class="pl-8 text-xs leading-snug text-fg/45">{{ reasoningHint }}</p>
                 </div>
             </section>
         </template>

@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Services\Limits\UsageMeter;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 
@@ -40,7 +41,15 @@ class HandleInertiaRequests extends Middleware
                     'settings' => $user->interfaceSettings(),
                 ] : null,
             ],
-            'recentChats' => fn () => $user?->chats()->latest('updated_at')->limit(30)->get(['id', 'title']) ?? [],
+            'recentChats' => fn () => $user?->chats()->latest('updated_at')->limit(30)->get(['id', 'title', 'updated_at']) ?? [],
+            // Заполнение лимитов (окна текста и агентов, ₽) и баланс токенов — кольцо у кнопки отправки.
+            // После каждого ответа фронт перезагружает только этот проп
+            'usage' => fn () => $user ? [
+                'windows' => app(UsageMeter::class)->summary($user),
+                'tokens' => (int) $user->content_tokens,
+            ] : null,
+            // Энергия — единица для юзера: столько ⚡ за 1 ₽
+            'energyRate' => (float) config('limits.energy_per_rub'),
         ];
     }
 }

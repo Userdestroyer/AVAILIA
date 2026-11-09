@@ -68,23 +68,24 @@ class GatewayCompleteTest extends TestCase
                 'usage' => ['input_tokens' => 14022, 'output_tokens' => 456],
                 'web_searches' => 1,
                 'searches' => $searches,
-            ], ['amount' => '1.48906000', 'currency' => 'RUB'], $searches],
+            ], ['amount' => '1.48906000', 'currency' => 'RUB'], $searches, ['1.489060', false]],
             // Polza называет стоимость сама — она точнее расценок (источник, кэш, поиск уже учтены)
             'polza — стоимость от провайдера' => ['polza', true, [
                 'usage' => ['prompt_tokens' => 27, 'completion_tokens' => 91, 'cost_rub' => 0.51955],
                 'web_searches' => 1,
-            ], ['amount' => '0.51955000', 'currency' => 'RUB'], []],
-            // Расценок нет, провайдер стоимость не сообщил — неизвестна, но ответ сохраняется
+            ], ['amount' => '0.51955000', 'currency' => 'RUB'], [], ['0.519550', false]],
+            // Расценок нет, провайдер стоимость не сообщил — неизвестна, но ответ сохраняется,
+            // а в лимит идёт оценка по запасной цене (1000 / 5000 ₽ за 1M): (27 × 1000 + 91 × 5000) / 1M
             'нет расценок — стоимость неизвестна' => ['proxyapi', false, [
                 'usage' => ['prompt_tokens' => 27, 'completion_tokens' => 91],
-            ], null, []],
+            ], null, [], ['0.482000', true]],
         ];
     }
 
     #[Group('D1')]
     #[DataProvider('costs')]
-    #[TestDox('Себестоимость ответа: от провайдера, если сообщил, иначе по расценкам с поиском; без расценок — неизвестна')]
-    public function test_answer_cost(string $provider, bool $withPrices, array $result, ?array $cost, array $searches): void
+    #[TestDox('Себестоимость ответа: от провайдера, если сообщил, иначе по расценкам с поиском; без расценок — неизвестна, а в лимит идёт оценка')]
+    public function test_answer_cost(string $provider, bool $withPrices, array $result, ?array $cost, array $searches, array $charged): void
     {
         config(['ai.gateway.secret' => 'gateway-secret']);
         $answer = $this->pendingAnswer($provider, 'claude-haiku-5-5');
@@ -98,6 +99,10 @@ class GatewayCompleteTest extends TestCase
             ->assertJsonPath('message.status', 'done')
             ->assertJsonPath('message.cost', $cost)
             ->assertJsonPath('message.searches', $searches);
+
+        // Трата — в текстовый лимит владельца чата: [₽, оценка ли]
+        $entry = $answer->chat->user->usageEntries()->sole();
+        $this->assertSame($charged, [$entry->amount, $entry->estimated]);
     }
 
     private function pendingAnswer(string $provider, string $model)

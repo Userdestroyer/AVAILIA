@@ -29,7 +29,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->redirectUsersTo('/text');
 
         // Тему пишет сам браузер (мгновенно, до ответа сервера) — шифровать эту куку нельзя
-        $middleware->encryptCookies(except: ['theme']);
+        $middleware->encryptCookies(except: ['theme', 'style', 'font']);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(

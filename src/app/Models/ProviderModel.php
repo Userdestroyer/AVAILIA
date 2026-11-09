@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\Capability;
+use App\Services\Ai\Data\Usage;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -80,6 +81,29 @@ class ProviderModel extends Model
         }
 
         $this->unsetRelation('capabilities');
+    }
+
+    /**
+     * Оценка стоимости, когда расценок нет и провайдер её не сообщил: по самой дорогой известной цене
+     * моделей того же вендора у этого провайдера, а нет и таких — по запасной (config limits.fallback_price).
+     * Лучше переоценить, чем пустить мимо лимита.
+     */
+    public static function estimateCost(?self $offer, Usage $usage, int $webSearches = 0): string
+    {
+        $known = $offer ? static::where('provider_id', $offer->provider_id)
+            ->whereNotNull('price_input')
+            ->whereNotNull('price_output')
+            ->whereHas('aiModel', fn ($q) => $q->where('vendor_id', $offer->aiModel?->vendor_id))
+            ->selectRaw('max(price_input) as input, max(price_output) as output, max(price_web_search) as search')
+            ->first() : null;
+
+        $estimate = new self([
+            'price_input' => $known?->input ?? config('limits.fallback_price.input'),
+            'price_output' => $known?->output ?? config('limits.fallback_price.output'),
+            'price_web_search' => $known?->search ?? 0,
+        ]);
+
+        return $estimate->calculateCost($usage->input + $usage->cacheRead + $usage->cacheWrite, $usage->output, webSearches: $webSearches);
     }
 
     public function hasPrices(): bool

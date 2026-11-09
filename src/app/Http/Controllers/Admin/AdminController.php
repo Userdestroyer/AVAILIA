@@ -44,6 +44,8 @@ class AdminController extends Controller
             ]),
             'activeProvider' => $this->providers->activeSlug(),
             'serviceModel' => $service->model()?->id,
+            'plans' => LimitsController::plans(),
+            'users' => LimitsController::users(),
             // Статистика тяжелее остального — догружается после открытия страницы
             'speed' => Inertia::defer(fn () => (new SpeedStats)->summary()),
             'vendors' => Vendor::orderBy('sort')->get(['id', 'slug', 'name', 'product']),

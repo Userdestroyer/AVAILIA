@@ -2,7 +2,7 @@
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import AnswerCard from '@/components/chat/AnswerCard.vue';
 import VendorIcon from '@/components/VendorIcon.vue';
-import { formatCost } from '@/lib/format';
+import { formatCost, formatEnergy } from '@/lib/format';
 
 /**
  * Ответы мульти-запроса: лента карточек со свайпом. Центральная — в фокусе,
@@ -87,13 +87,13 @@ onBeforeUnmount(() => {
                 :key="answer.id"
                 type="button"
                 class="flex items-center gap-1.5 rounded-full px-3 py-1 text-xs transition"
-                :class="index === active ? 'bg-white/12 text-white' : 'text-white/55 hover:text-white'"
+                :class="index === active ? 'pill-active' : 'text-fg/55 hover:text-fg'"
                 @click="go(index)"
             >
                 <VendorIcon v-if="answer.model" :slug="answer.model.vendor" />
                 {{ answer.model?.name }}
                 <span v-if="answer.status === 'streaming' || answer.status === 'pending'" class="size-1.5 animate-pulse rounded-full bg-hot" />
-                <span v-else-if="answer.cost" class="text-white/45">{{ formatCost(answer.cost) }}</span>
+                <span v-else-if="answer.energy != null" class="text-fg/45 tabular-nums" :title="answer.cost ? `Себестоимость: ${formatCost(answer.cost)}` : ''">⚡{{ formatEnergy(answer.energy) }}</span>
             </button>
         </div>
 

@@ -16,6 +16,11 @@ export default defineConfig({
                     // По умолчанию грузится только latin — русский текст падал бы в системный шрифт
                     subsets: ['latin', 'cyrillic'],
                 }),
+                // Шрифты акцентов стиля JIVA. Предзагружается только Jura (по умолчанию); остальные объявлены
+                // и подтягиваются при первом показе — их заранее прогревает вкладка «Оформление»
+                bunny('Jura', { weights: [300, 400, 500], subsets: ['latin', 'cyrillic'] }),
+                bunny('Exo 2', { weights: [300, 400, 500], subsets: ['latin', 'cyrillic'], preload: false }),
+                bunny('Unbounded', { weights: [300, 400], subsets: ['latin', 'cyrillic'], preload: false }),
             ],
         }),
         vue({

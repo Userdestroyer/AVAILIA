@@ -4,7 +4,7 @@ import { ChevronDown, Disc3, Moon, Palette, Pin, Plus, Sun, Trash2, UserRound, X
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useContextPlates } from '@/composables/useContextPlates';
 import { useTheme } from '@/composables/useTheme';
-import { THEMES } from '@/lib/theme';
+import { FONTS, STYLES, THEMES } from '@/lib/theme';
 
 /**
  * Профиль и настройки: «Обо мне» (картриджи контекста) и оформление — в одном окне.
@@ -19,18 +19,25 @@ const TABS = [
 ];
 
 // ── Оформление ─────────────────────────────────────────
-const { theme, setTheme } = useTheme();
+const { theme, style, font, setTheme, setStyle, setFont } = useTheme();
 const themeError = ref(null);
 const ICONS = { light: Sun, dark: Moon };
 
-const chooseTheme = async (value) => {
+const choose = async (setter, value) => {
     themeError.value = null;
     try {
-        await setTheme(value);
+        await setter(value);
     } catch {
-        themeError.value = 'Не удалось сохранить тему — вернули прежнюю';
+        themeError.value = 'Не удалось сохранить оформление — вернули прежнее';
     }
 };
+
+// Шрифты акцентов прогреваем при открытии вкладки — превью и переключение без задержки
+watch([open, tab], ([isOpen, current]) => {
+    if (isOpen && current === 'appearance') {
+        Object.values(FONTS).forEach(({ family }) => document.fonts?.load(`400 1em "${family}"`).catch(() => {}));
+    }
+});
 
 // ── Обо мне ────────────────────────────────────────────
 const { plates, knownTags, loaded, load, isDirty, dirtyCount, create, save, revert, remove } = useContextPlates();
@@ -133,7 +140,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
                                 :key="item.key"
                                 type="button"
                                 class="flex items-center gap-2 rounded-xl px-3 py-1.5 text-sm transition md:px-4"
-                                :class="tab === item.key ? 'bg-white/15 text-white shadow-sm' : 'text-white/60 hover:text-white'"
+                                :class="tab === item.key ? 'pill-active' : 'text-fg/60 hover:text-fg'"
                                 @click="tab = item.key"
                             >
                                 <component :is="item.icon" class="size-4" :stroke-width="1.5" />
@@ -141,19 +148,19 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
                                 <span v-if="item.key === 'context' && dirtyCount" class="size-1.5 rounded-full bg-hot" title="Есть несохранённые изменения" />
                             </button>
                         </div>
-                        <button type="button" class="vein rounded-xl p-2 hover:text-white" title="Закрыть" @click="open = false">
+                        <button type="button" class="vein rounded-xl p-2 hover:text-fg" title="Закрыть" @click="open = false">
                             <X class="size-5" :stroke-width="1.5" />
                         </button>
                     </header>
 
                     <!-- Обо мне -->
                     <div v-if="tab === 'context'" class="scrollbar-glass min-h-0 flex-1 overflow-y-auto px-3 pb-3 md:px-5 md:pb-5">
-                        <p class="px-1 text-sm text-white/55">
+                        <p class="px-1 text-sm text-fg/55">
                             Картриджи контекста. В запрос они вставляются целиком, копировать ничего не нужно: подключаются через
-                            <span class="text-white/80">#тег</span> в поле ввода или сами, если закреплены. Модель видит только подключённые.
+                            <span class="text-fg/80">#тег</span> в поле ввода или сами, если закреплены. Модель видит только подключённые.
                         </p>
 
-                        <p v-if="!loaded" class="mt-4 px-1 text-sm text-white/40">Загружаю…</p>
+                        <p v-if="!loaded" class="mt-4 px-1 text-sm text-fg/40">Загружаю…</p>
 
                         <!-- Быстрый старт -->
                         <div v-else-if="!plates.length" class="mt-4 grid gap-2 sm:grid-cols-2">
@@ -161,13 +168,13 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
                                 v-for="starter in STARTERS"
                                 :key="starter.title"
                                 type="button"
-                                class="glass-inset flex items-start gap-3 rounded-2xl p-3.5 text-left transition hover:bg-white/8"
+                                class="glass-inset flex items-start gap-3 rounded-2xl p-3.5 text-left transition hover:bg-fg/8"
                                 @click="add(starter)"
                             >
                                 <Disc3 class="vein mt-0.5 size-5 shrink-0" :stroke-width="1.5" />
                                 <span>
                                     <span class="block text-[15px]">{{ starter.title }}</span>
-                                    <span class="block text-xs text-white/50">{{ starter.hint }}</span>
+                                    <span class="block text-xs text-fg/50">{{ starter.hint }}</span>
                                 </span>
                             </button>
                         </div>
@@ -184,7 +191,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
                                         class="min-w-0 flex-1 bg-transparent text-[15px] outline-none"
                                         @focus="expanded = plate.uid"
                                     />
-                                    <span v-if="plate.saved?.tokens !== undefined" class="hidden shrink-0 text-xs text-white/40 tabular-nums sm:inline" title="Примерно столько токенов добавит к каждому запросу">
+                                    <span v-if="plate.saved?.tokens !== undefined" class="hidden shrink-0 text-xs text-fg/40 tabular-nums sm:inline" title="Примерно столько токенов добавит к каждому запросу">
                                         ≈ {{ plate.saved.tokens }} ток.
                                     </span>
                                     <button
@@ -203,9 +210,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
 
                                 <!-- Теги -->
                                 <div class="flex flex-wrap items-center gap-1.5 px-3 pb-2.5 pl-10">
-                                    <span v-for="tag in plate.draft.tags" :key="tag" class="flex items-center gap-1 rounded-full bg-white/8 py-0.5 pr-1 pl-2 text-xs text-white/75">
+                                    <span v-for="tag in plate.draft.tags" :key="tag" class="flex items-center gap-1 rounded-full bg-fg/8 py-0.5 pr-1 pl-2 text-xs text-fg/75">
                                         #{{ tag }}
-                                        <button type="button" class="rounded-full p-0.5 text-white/40 hover:text-white" title="Убрать тег" @click="plate.draft.tags = plate.draft.tags.filter((t) => t !== tag)">
+                                        <button type="button" class="rounded-full p-0.5 text-fg/40 hover:text-fg" title="Убрать тег" @click="plate.draft.tags = plate.draft.tags.filter((t) => t !== tag)">
                                             <X class="size-3" :stroke-width="2" />
                                         </button>
                                     </span>
@@ -213,7 +220,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
                                         :list="`tags-${plate.uid}`"
                                         placeholder="+ тег"
                                         maxlength="40"
-                                        class="w-20 bg-transparent text-xs outline-none placeholder:text-white/35 focus:w-32"
+                                        class="w-20 bg-transparent text-xs outline-none placeholder:text-fg/35 focus:w-32"
                                         @keydown="['Enter', ','].includes($event.key) && ($event.preventDefault(), addTag(plate, $event))"
                                         @blur="addTag(plate, $event)"
                                     />
@@ -223,13 +230,13 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
                                 </div>
 
                                 <!-- Содержимое -->
-                                <div v-if="expanded === plate.uid" class="border-t border-white/6 px-3 pt-2.5">
+                                <div v-if="expanded === plate.uid" class="border-t border-fg/6 px-3 pt-2.5">
                                     <textarea
                                         :ref="autosize"
                                         v-model="plate.draft.content"
                                         rows="4"
                                         placeholder="Что модели стоит знать: факты, предпочтения, контекст. Пишите как для умного коллеги."
-                                        class="min-h-24 w-full resize-none bg-transparent text-[0.9rem] leading-relaxed outline-none placeholder:text-white/35 md:text-[15px]"
+                                        class="min-h-24 w-full resize-none bg-transparent text-[0.9rem] leading-relaxed outline-none placeholder:text-fg/35 md:text-[15px]"
                                         @input="autosize($event.target)"
                                     />
                                 </div>
@@ -237,7 +244,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
                                 <!-- Действия: сохранить явно -->
                                 <div v-if="expanded === plate.uid || isDirty(plate)" class="flex flex-wrap items-center gap-2 px-3 pt-1 pb-2.5 text-xs">
                                     <span v-if="plate.status" class="text-hot-soft">{{ plate.status }}</span>
-                                    <span v-else-if="plate.saved" class="text-white/40">Версий в истории: {{ plate.saved.versions ?? 1 }}</span>
+                                    <span v-else-if="plate.saved" class="text-fg/40">Версий в истории: {{ plate.saved.versions ?? 1 }}</span>
                                     <button
                                         type="button"
                                         class="ml-auto flex items-center gap-1 rounded-lg px-2 py-1 transition"
@@ -248,7 +255,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
                                         {{ confirming === plate.uid ? 'Удалить?' : 'Удалить' }}
                                     </button>
                                     <template v-if="isDirty(plate)">
-                                        <button type="button" class="rounded-lg px-2.5 py-1 text-white/60 transition hover:bg-white/5 hover:text-white" @click="revert(plate)">
+                                        <button type="button" class="rounded-lg px-2.5 py-1 text-fg/60 transition hover:bg-fg/5 hover:text-fg" @click="revert(plate)">
                                             Отменить
                                         </button>
                                         <button
@@ -268,7 +275,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
                         <button
                             v-if="loaded && plates.length"
                             type="button"
-                            class="mt-3 flex w-full items-center justify-center gap-2 rounded-2xl border border-dashed border-white/15 py-2.5 text-sm text-white/60 transition hover:border-white/30 hover:text-white"
+                            class="mt-3 flex w-full items-center justify-center gap-2 rounded-2xl border border-dashed border-fg/15 py-2.5 text-sm text-fg/60 transition hover:border-fg/30 hover:text-fg"
                             @click="add()"
                         >
                             <Plus class="size-4" :stroke-width="1.5" />
@@ -277,24 +284,63 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
                     </div>
 
                     <!-- Оформление -->
-                    <div v-else class="space-y-3 px-4 pb-5 md:px-5">
+                    <div v-else class="scrollbar-glass min-h-0 flex-1 space-y-5 overflow-y-auto px-4 pb-5 md:px-5">
+                        <!-- Стиль: смена гасит один фон и поднимает другой, вдвоём они не живут -->
+                        <div class="space-y-2">
+                            <span class="text-[15px]">Стиль</span>
+                            <div class="grid gap-2 sm:grid-cols-2">
+                                <button
+                                    v-for="(meta, value) in STYLES"
+                                    :key="value"
+                                    type="button"
+                                    class="glass-inset rounded-2xl p-3.5 text-left transition"
+                                    :class="style === value ? 'ring-1 ring-cool/80 shadow-[0_0_18px_rgb(91_140_255/0.35)]' : 'hover:bg-fg/5'"
+                                    :aria-pressed="style === value"
+                                    @click="choose(setStyle, value)"
+                                >
+                                    <span class="block text-[15px]" :class="{ 'brand text-sm': value === 'jiva' }">{{ meta.label }}</span>
+                                    <span class="mt-0.5 block text-xs text-fg/55">{{ meta.hint }}</span>
+                                </button>
+                            </div>
+                        </div>
+
                         <div class="flex items-center justify-between gap-4">
-                            <span class="text-[15px]">Тема</span>
+                            <span class="text-[15px]">Схема</span>
                             <div class="glass-inset flex rounded-2xl p-1">
                                 <button
                                     v-for="(meta, value) in THEMES"
                                     :key="value"
                                     type="button"
                                     class="flex items-center gap-2 rounded-xl px-4 py-2 text-sm transition"
-                                    :class="theme === value ? 'bg-white/15 text-white shadow-sm' : 'text-white/60 hover:text-white'"
+                                    :class="theme === value ? 'pill-active' : 'text-fg/60 hover:text-fg'"
                                     :aria-pressed="theme === value"
-                                    @click="chooseTheme(value)"
+                                    @click="choose(setTheme, value)"
                                 >
                                     <component :is="ICONS[value]" class="size-4" :stroke-width="1.5" />
                                     {{ meta.label }}
                                 </button>
                             </div>
                         </div>
+
+                        <!-- Шрифт акцентов (только JIVA): превью — логотипом этим шрифтом -->
+                        <div v-if="style === 'jiva'" class="space-y-2">
+                            <span class="text-[15px]">Шрифт акцентов</span>
+                            <div class="grid gap-2 sm:grid-cols-3">
+                                <button
+                                    v-for="(meta, value) in FONTS"
+                                    :key="value"
+                                    type="button"
+                                    class="glass-inset rounded-2xl px-3 py-3 text-center transition"
+                                    :class="font === value ? 'ring-1 ring-cool/80 shadow-[0_0_18px_rgb(91_140_255/0.35)]' : 'hover:bg-fg/5'"
+                                    :aria-pressed="font === value"
+                                    @click="choose(setFont, value)"
+                                >
+                                    <span class="block text-base tracking-[0.3em] uppercase" :style="{ fontFamily: `'${meta.family}'` }">Availia</span>
+                                    <span class="mt-1 block text-xs text-fg/55">{{ meta.label }}</span>
+                                </button>
+                            </div>
+                        </div>
+
                         <p v-if="themeError" class="text-sm text-hot-soft">{{ themeError }}</p>
                     </div>
                 </section>

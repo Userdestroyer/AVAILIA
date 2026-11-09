@@ -6,9 +6,13 @@ use App\Enums\MessageRole;
 use App\Models\AiModel;
 use App\Models\AppSetting;
 use App\Models\Message;
+use App\Enums\UsageScope;
+use App\Models\ProviderModel;
 use App\Models\ServiceCall;
 use App\Models\User;
 use App\Services\Ai\Data\ChatOptions;
+use App\Services\Limits\Money;
+use App\Services\Limits\UsageMeter;
 use Throwable;
 
 /**
@@ -20,7 +24,10 @@ class ServiceModel
 {
     public const SETTING = 'ai.service_model';
 
-    public function __construct(private ProviderRegistry $providers) {}
+    public function __construct(
+        private ProviderRegistry $providers,
+        private UsageMeter $meter,
+    ) {}
 
     public function model(): ?AiModel
     {
@@ -61,15 +68,27 @@ class ServiceModel
 
         $usage = $completion->usage;
         $reported = $provider->reportedCost($completion->rawUsage);
-        ServiceCall::create([
+        $cost = $reported['amount'] ?? $offer->calculateCost($usage->input, $usage->output, $usage->cacheRead, $usage->cacheWrite);
+        $serviceCall = ServiceCall::create([
             ...$call,
             'status' => 'done',
             'input_tokens' => $usage->input + $usage->cacheRead + $usage->cacheWrite,
             'output_tokens' => $usage->output,
-            'cost' => $reported['amount'] ?? $offer->calculateCost($usage->input, $usage->output, $usage->cacheRead, $usage->cacheWrite),
+            'cost' => $cost,
             'cost_currency' => $reported['currency'] ?? $offer->price_currency,
             'duration_ms' => $this->since($started),
         ]);
+
+        // Фоновая работа ради юзера — в его текстовый лимит: учёт честный и единый
+        if ($user) {
+            $this->meter->charge(
+                $user,
+                UsageScope::Text,
+                $cost !== null ? Money::toRub($cost, $serviceCall->cost_currency) : ProviderModel::estimateCost($offer, $usage),
+                $serviceCall,
+                estimated: $cost === null,
+            );
+        }
 
         return trim($completion->content);
     }

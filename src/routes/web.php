@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Admin\AdminController;
+use App\Http\Controllers\Admin\LimitsController;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\ContextController;
 use App\Http\Controllers\MessageController;
@@ -36,6 +37,9 @@ Route::middleware('auth')->group(function () {
         Route::get('/', [AdminController::class, 'index'])->name('index');
         Route::put('/provider', [AdminController::class, 'activate'])->name('provider');
         Route::put('/service-model', [AdminController::class, 'serviceModel'])->name('service-model');
+        Route::patch('/plans/{plan}', [LimitsController::class, 'updatePlan'])->name('plans.update');
+        Route::patch('/users/{user}', [LimitsController::class, 'updateUser'])->name('users.update');
+        Route::post('/users/{user}/tokens', [LimitsController::class, 'grantTokens'])->name('users.tokens');
         Route::post('/models', [AdminController::class, 'storeModel'])->name('models.store');
         Route::patch('/models/{model}', [AdminController::class, 'updateModel'])->name('models.update');
         Route::put('/providers/{provider:slug}/models/{model}', [AdminController::class, 'upsertOffering'])->name('offerings.upsert');

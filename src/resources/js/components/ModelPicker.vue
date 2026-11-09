@@ -58,7 +58,7 @@ const toggle = (what) => (open.value = open.value === what ? null : what);
         >
             <span class="min-w-0 flex-1">
                 <span class="block truncate text-[15px]">{{ model?.name ?? 'Выберите модель' }}</span>
-                <span class="block truncate text-xs text-white/50">{{ vendor?.product }} · {{ model?.description }}</span>
+                <span class="block truncate text-xs text-fg/50">{{ vendor?.product }} · {{ model?.description }}</span>
             </span>
             <ChevronDown class="vein size-4 shrink-0 transition" :class="{ 'rotate-180': open === 'model' }" :stroke-width="1.5" />
         </button>
@@ -68,19 +68,19 @@ const toggle = (what) => (open.value = open.value === what ? null : what);
         <!-- Список вендоров -->
         <div
             v-if="open === 'vendor'"
-            class="absolute top-full left-0 z-20 mt-2 w-56 rounded-2xl border border-white/10 bg-[#2c3445]/95 p-1 shadow-2xl backdrop-blur-xl"
+            class="absolute top-full left-0 z-20 mt-2 w-56 rounded-2xl border border-fg/10 bg-(--popover-bg) p-1 shadow-2xl backdrop-blur-xl"
         >
             <button
                 v-for="v in vendors"
                 :key="v.slug"
                 type="button"
                 :disabled="!freeModels(v).length"
-                class="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left hover:bg-white/5 disabled:cursor-default disabled:opacity-35 disabled:hover:bg-transparent"
+                class="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left hover:bg-fg/5 disabled:cursor-default disabled:opacity-35 disabled:hover:bg-transparent"
                 @click="pickVendor(v)"
             >
                 <VendorIcon :slug="v.slug" />
                 <span class="flex-1 text-[15px]">{{ v.product }}</span>
-                <span class="text-xs text-white/40">{{ v.models.length }}</span>
+                <span class="text-xs text-fg/40">{{ v.models.length }}</span>
                 <Check v-if="v.slug === vendor?.slug" class="size-4 text-cool-soft" :stroke-width="1.5" />
             </button>
         </div>
@@ -88,19 +88,19 @@ const toggle = (what) => (open.value = open.value === what ? null : what);
         <!-- Модели выбранного вендора -->
         <div
             v-if="open === 'model'"
-            class="scrollbar-glass absolute inset-x-0 top-full z-20 mt-2 max-h-[60vh] overflow-y-auto rounded-2xl border border-white/10 bg-[#2c3445]/95 p-1 shadow-2xl backdrop-blur-xl"
+            class="scrollbar-glass absolute inset-x-0 top-full z-20 mt-2 max-h-[60vh] overflow-y-auto rounded-2xl border border-fg/10 bg-(--popover-bg) p-1 shadow-2xl backdrop-blur-xl"
         >
             <button
                 v-for="m in vendor.models"
                 :key="m.id"
                 type="button"
                 :disabled="disabledIds.includes(m.id)"
-                class="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left hover:bg-white/5 disabled:cursor-default disabled:opacity-35 disabled:hover:bg-transparent"
+                class="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left hover:bg-fg/5 disabled:cursor-default disabled:opacity-35 disabled:hover:bg-transparent"
                 @click="pickModel(m.id)"
             >
                 <span class="min-w-0 flex-1">
                     <span class="block text-[15px]">{{ m.name }}</span>
-                    <span class="block text-xs text-white/50">
+                    <span class="block text-xs text-fg/50">
                         <template v-if="m.price_input !== null && m.price_output !== null">
                             {{ formatPrice(m.price_input, m.price_currency) }} / {{ formatPrice(m.price_output, m.price_currency) }} за 1M токенов
                         </template>

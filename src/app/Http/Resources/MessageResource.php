@@ -4,6 +4,7 @@ namespace App\Http\Resources;
 
 use App\Enums\MessageRole;
 use App\Enums\MessageStatus;
+use App\Services\Limits\Money;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 use RuntimeException;
@@ -30,6 +31,10 @@ class MessageResource extends JsonResource
                 'vendor' => $this->aiModel->vendor->slug,
             ] : null,
             'cost' => $isAnswer && $this->status === MessageStatus::Done ? $this->cost() : null,
+            // Энергия — то, что видит юзер (₽ себестоимости × курс энергии); рубли — при наведении
+            'energy' => $isAnswer && $this->status === MessageStatus::Done && $this->cost !== null
+                ? round((float) Money::toRub($this->cost, $this->cost_currency, $this->created_at) * config('limits.energy_per_rub'), 2)
+                : null,
             // Поиски модели — пузырьки над ответом
             'searches' => $isAnswer ? ($this->search_log ?? []) : [],
             // Какие картриджи ушли с вопросом — пластинки над ним

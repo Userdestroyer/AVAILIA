@@ -6,6 +6,7 @@ use App\Enums\MessageRole;
 use App\Jobs\GenerateChatTitle;
 use App\Enums\MessageStatus;
 use App\Models\AiModel;
+use App\Enums\UsageScope;
 use App\Models\Chat;
 use App\Models\ContextPlate;
 use App\Models\Message;
@@ -13,7 +14,10 @@ use App\Models\ProviderModel;
 use App\Models\User;
 use App\Services\Ai\Data\ChatOptions;
 use App\Services\Ai\Data\ChatRequest;
+use App\Services\Ai\Data\Usage;
 use App\Services\Ai\ProviderRegistry;
+use App\Services\Limits\Money;
+use App\Services\Limits\UsageMeter;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Redis;
@@ -26,7 +30,10 @@ use Illuminate\Support\Str;
  */
 class ChatStream
 {
-    public function __construct(private ProviderRegistry $providers) {}
+    public function __construct(
+        private ProviderRegistry $providers,
+        private UsageMeter $meter,
+    ) {}
 
     /**
      * @param  Collection<int, ProviderModel>  $offers  предложения моделей у провайдера, в порядке выбора юзера
@@ -182,7 +189,30 @@ class ChatStream
 
         // Чат могли удалить, пока ответ писался — ответ всё равно сохранён и учтён
         $message->chat?->touch();
+        $this->charge($message, $offer, $usage, $searches);
 
         return $message;
+    }
+
+    /**
+     * Трата ответа — в текстовый лимит владельца чата (и удалённого тоже: деньги потрачены).
+     * Стоимость неизвестна — оценка по самой дорогой известной цене вендора: иначе модель без расценок
+     * обходила бы лимит.
+     */
+    private function charge(Message $message, ?ProviderModel $offer, Usage $usage, int $searches): void
+    {
+        $user = Chat::withTrashed()->find($message->chat_id)?->user;
+        if (! $user) {
+            return;
+        }
+
+        if ($message->cost !== null) {
+            $this->meter->charge($user, UsageScope::Text, Money::toRub($message->cost, $message->cost_currency, $message->created_at), $message);
+
+            return;
+        }
+
+        $estimate = ProviderModel::estimateCost($offer, $usage, $searches);
+        $this->meter->charge($user, UsageScope::Text, $estimate, $message, estimated: true);
     }
 }

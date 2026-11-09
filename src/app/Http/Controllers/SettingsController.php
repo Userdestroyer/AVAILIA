@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\StoreMessageRequest;
+use App\Support\Appearance;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
 use Illuminate\Http\Response;
@@ -20,7 +21,9 @@ class SettingsController extends Controller
     public function update(Request $request): Response
     {
         $request->validate([
-            'theme' => ['sometimes', Rule::in(['light', 'dark'])],
+            'theme' => ['sometimes', Rule::in(Appearance::OPTIONS['theme'])],
+            'style' => ['sometimes', Rule::in(Appearance::OPTIONS['style'])],
+            'font' => ['sometimes', Rule::in(Appearance::OPTIONS['font'])],
             // Последний выбор в панели чата — восстанавливается при перезагрузке и на других устройствах
             'chat' => ['sometimes', 'array'],
             'chat.mode' => ['required_with:chat', Rule::in(['single', 'multi'])],
@@ -39,6 +42,8 @@ class SettingsController extends Controller
         // Только известные ключи — в JSON не попадёт ничего лишнего
         $settings = array_filter([
             'theme' => $request->input('theme'),
+            'style' => $request->input('style'),
+            'font' => $request->input('font'),
             'chat' => $request->has('chat') ? Arr::only($request->input('chat'), self::CHAT_KEYS) : null,
         ], fn ($value) => $value !== null);
 

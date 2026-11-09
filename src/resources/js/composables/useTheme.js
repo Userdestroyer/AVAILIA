@@ -1,35 +1,47 @@
 import { ref } from 'vue';
-import { DEFAULT_THEME, THEMES } from '@/lib/theme';
+import { DEFAULTS, FONTS, STYLES, THEMES } from '@/lib/theme';
 import { patchJson } from '@/lib/http';
 
-// Тему отдаёт сервер в <html data-theme> — стартуем с неё, без вспышки
-const initial = document.documentElement.dataset.theme;
-const theme = ref(THEMES[initial] ? initial : DEFAULT_THEME);
+/**
+ * Оформление: стиль, схема и шрифт акцентов. Сервер отдаёт их в атрибутах <html> — стартуем с них,
+ * без вспышки. Применяется сразу, сохраняется фоном; не принял сервер — откат.
+ */
+const OPTIONS = { style: STYLES, theme: THEMES, font: FONTS };
+const root = document.documentElement;
+const read = (key) => (OPTIONS[key][root.dataset[key]] ? root.dataset[key] : DEFAULTS[key]);
 
-function apply(value) {
-    theme.value = value;
-    document.documentElement.dataset.theme = value;
-    // Кука — чтобы и страница входа после выхода открывалась в выбранной теме
-    document.cookie = `theme=${value}; path=/; max-age=31536000; samesite=lax`;
+const state = {
+    style: ref(read('style')),
+    theme: ref(read('theme')),
+    font: ref(read('font')),
+};
+
+function apply(key, value) {
+    state[key].value = value;
+    root.dataset[key] = value;
+    // Кука — чтобы и страница входа после выхода открывалась в выбранном оформлении
+    document.cookie = `${key}=${value}; path=/; max-age=31536000; samesite=lax`;
 }
 
-/**
- * Применяем сразу, сохраняем фоном; если сервер не принял — откатываем.
- */
-async function setTheme(value) {
-    const previous = theme.value;
-    if (value === previous || !THEMES[value]) return;
+async function set(key, value) {
+    const previous = state[key].value;
+    if (value === previous || !OPTIONS[key][value]) return;
 
-    apply(value);
+    apply(key, value);
 
     try {
-        await patchJson('/settings', { theme: value });
+        await patchJson('/settings', { [key]: value });
     } catch (error) {
-        apply(previous);
+        apply(key, previous);
         throw error;
     }
 }
 
 export function useTheme() {
-    return { theme, setTheme };
+    return {
+        ...state,
+        setTheme: (value) => set('theme', value),
+        setStyle: (value) => set('style', value),
+        setFont: (value) => set('font', value),
+    };
 }

@@ -3,7 +3,6 @@
 namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
-use App\Enums\MessageRole;
 use App\Enums\PlanCode;
 use App\Enums\UserRole;
 use Database\Factories\UserFactory;
@@ -35,6 +34,8 @@ class User extends Authenticatable
             'password' => 'hashed',
             'role' => UserRole::class,
             'plan_expires_at' => 'datetime',
+            'content_tokens' => 'integer',
+            'tokens_granted_at' => 'datetime',
             'settings' => 'array',
         ];
     }
@@ -50,8 +51,15 @@ class User extends Authenticatable
     {
         return [
             'theme' => $this->settings['theme'] ?? null,
+            'style' => $this->settings['style'] ?? null,
+            'font' => $this->settings['font'] ?? null,
             'chat' => $this->settings['chat'] ?? null,
         ];
+    }
+
+    public function usageEntries(): HasMany
+    {
+        return $this->hasMany(UsageEntry::class);
     }
 
     public function plan(): BelongsTo
@@ -79,26 +87,13 @@ class User extends Authenticatable
         return $this->hasManyThrough(Message::class, Chat::class);
     }
 
-    /**
-     * Сколько запросов к моделям сделано сегодня — для дневного лимита тарифа.
-     */
-    public function requestsToday(): int
-    {
-        // С удалёнными: иначе, удаляя ответы, можно было бы обнулять лимит
-        return $this->messages()
-            ->withTrashed()
-            ->where('messages.role', MessageRole::Assistant)
-            ->where('messages.created_at', '>=', today())
-            ->count();
-    }
-
     public function isAdmin(): bool
     {
         return $this->role === UserRole::Admin;
     }
 
     /**
-     * Тариф, который действует сейчас: без тарифа или после истечения — гостевой.
+     * Тариф, который действует сейчас: без тарифа или после истечения — Promo (по умолчанию для всех).
      */
     public function effectivePlan(): Plan
     {
@@ -106,6 +101,6 @@ class User extends Authenticatable
             return $this->plan;
         }
 
-        return Plan::byCode(PlanCode::Guest);
+        return once(fn () => Plan::byCode(PlanCode::Promo));
     }
 }

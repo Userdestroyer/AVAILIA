@@ -87,7 +87,7 @@ class InstallCommand extends Command
             'username' => $username,
             'password' => $password,
             'role' => UserRole::Admin,
-            'plan_id' => Plan::byCode(PlanCode::Unlimited)->id,
+            'plan_id' => Plan::byCode(PlanCode::Custom)->id,
             'email_verified_at' => now(),
         ])->save();
 

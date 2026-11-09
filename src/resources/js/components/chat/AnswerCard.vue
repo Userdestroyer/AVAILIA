@@ -1,9 +1,9 @@
 <script setup>
-import { Check, Globe, LoaderCircle, Sparkle, X } from 'lucide-vue-next';
+import { Check, Globe, LoaderCircle, Sparkle, X, Zap } from 'lucide-vue-next';
 import MarkdownContent from '@/components/MarkdownContent.vue';
 import MessageActions from '@/components/chat/MessageActions.vue';
 import VendorIcon from '@/components/VendorIcon.vue';
-import { formatCost } from '@/lib/format';
+import { formatCost, formatEnergy } from '@/lib/format';
 
 const props = defineProps({
     answer: { type: Object, required: true },
@@ -17,7 +17,7 @@ const finished = () => !['pending', 'streaming'].includes(props.answer.status) &
 
 <template>
     <div class="answer-frame space-y-2 px-2.5 py-2.5 md:px-4 md:py-3">
-        <div v-if="answer.model" class="flex items-center gap-2 text-xs text-white/50">
+        <div v-if="answer.model" class="flex items-center gap-2 text-xs text-fg/50">
             <VendorIcon :slug="answer.model.vendor" />
             {{ answer.model.name }}
         </div>
@@ -26,7 +26,7 @@ const finished = () => !['pending', 'streaming'].includes(props.answer.status) &
             <li
                 v-for="search in answer.searches"
                 :key="search.id"
-                class="glass-inset flex w-fit max-w-full items-center gap-2 rounded-full py-1 pr-3 pl-2 text-xs text-white/70"
+                class="glass-inset flex w-fit max-w-full items-center gap-2 rounded-full py-1 pr-3 pl-2 text-xs text-fg/70"
             >
                 <LoaderCircle v-if="search.status === 'searching'" class="size-3.5 shrink-0 animate-spin text-cool-soft" :stroke-width="2" />
                 <Check v-else-if="search.status === 'done'" class="size-3.5 shrink-0 text-emerald-300" :stroke-width="2" />
@@ -44,7 +44,13 @@ const finished = () => !['pending', 'streaming'].includes(props.answer.status) &
         <p v-if="answer.status === 'failed'" class="text-sm text-hot-soft">{{ answer.error || 'Модель не ответила' }}</p>
         <div v-if="finished() || answer.cost" class="-mb-1 flex items-center justify-between gap-2">
             <MessageActions v-if="finished()" :text="answer.content" @delete="$emit('delete', answer)" />
-            <span v-if="answer.cost" class="ml-auto text-xs text-white/55" title="Себестоимость ответа">{{ formatCost(answer.cost) }}</span>
+            <span
+                v-if="answer.energy !== null && answer.energy !== undefined"
+                class="ml-auto flex items-center gap-0.5 text-xs text-fg/55 tabular-nums"
+                :title="answer.cost ? `Себестоимость: ${formatCost(answer.cost)}` : ''"
+            >
+                <Zap class="size-3 fill-current text-cool-soft" :stroke-width="0" />{{ formatEnergy(answer.energy) }}
+            </span>
         </div>
     </div>
 </template>

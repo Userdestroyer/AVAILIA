@@ -46,7 +46,7 @@ onBeforeUnmount(() => clearTimeout(timer));
     <div class="flex items-center gap-0.5">
         <button
             type="button"
-            class="vein rounded-lg p-1.5 transition hover:text-white"
+            class="vein rounded-lg p-1.5 transition hover:text-fg"
             :title="copied ? 'Скопировано' : 'Скопировать'"
             :disabled="!text"
             @click="copy"

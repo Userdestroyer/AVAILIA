@@ -23,7 +23,7 @@ class ServiceModelTest extends TestCase
     protected bool $seed = true;
 
     #[Group('D1')]
-    #[TestDox('Название чата придумывает сервисная модель; фоновый вызов учитывается со стоимостью, переименованный чат не трогается')]
+    #[TestDox('Название чата придумывает сервисная модель; фоновый вызов учитывается со стоимостью и идёт в текстовый лимит, переименованный чат не трогается')]
     public function test_chat_title_comes_from_service_model_and_is_accounted(): void
     {
         config(['ai.providers.proxyapi' => ['url' => 'https://proxy.test/v1', 'key' => 'secret']]);
@@ -47,5 +47,7 @@ class ServiceModelTest extends TestCase
         // Haiku у proxyapi: (100 × 30 + 10 × 150) / 1M
         $call = ServiceCall::sole();
         $this->assertSame(['chat_title', 'done', $chat->user_id, '0.00450000'], [$call->purpose, $call->status, $call->user_id, $call->cost]);
+        // Фоновая работа ради юзера — в его текстовый лимит
+        $this->assertSame(['text', '0.004500'], [$chat->user->usageEntries()->sole()->scope->value, $chat->user->usageEntries()->sole()->amount]);
     }
 }

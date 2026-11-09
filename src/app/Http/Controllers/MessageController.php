@@ -13,7 +13,10 @@ use Illuminate\Http\Response;
 use Illuminate\Support\Facades\DB;
 use App\Services\Ai\Data\ChatOptions;
 use App\Services\Ai\ProviderRegistry;
+use App\Enums\UsageScope;
+use App\Models\UsageWindow;
 use App\Services\Chat\ChatStream;
+use App\Services\Limits\UsageMeter;
 use Illuminate\Http\JsonResponse;
 
 class MessageController extends Controller
@@ -55,17 +58,22 @@ class MessageController extends Controller
         return response()->noContent();
     }
 
-    public function store(StoreMessageRequest $request, ChatStream $stream, ProviderRegistry $providers): JsonResponse
+    public function store(StoreMessageRequest $request, ChatStream $stream, ProviderRegistry $providers, UsageMeter $meter): JsonResponse
     {
         $user = $request->user();
 
-        // Каждая модель мульти-запроса — отдельный запрос в счёт дневного лимита
         $modelIds = array_map('intval', $request->input('ai_model_ids'));
-        $limit = $user->effectivePlan()->daily_request_limit;
-        if ($limit !== null && $user->requestsToday() + count($modelIds) > $limit) {
-            $left = max(0, $limit - $user->requestsToday());
 
-            return response()->json(['message' => "Дневной лимит запросов: осталось {$left} из {$limit}."], 429);
+        // Окна «сессия + неделя»: проверка — две строки по индексу, путь к первому токену не удлиняется
+        if ($exceeded = $meter->check($user, UsageScope::Text)) {
+            $window = $exceeded['kind'] === UsageWindow::SESSION ? 'сессии' : 'недели';
+            $at = $exceeded['resets_at']->copy()->timezone(config('app.display_timezone', 'Europe/Moscow'));
+            $when = $at->isToday() ? $at->format('H:i') : $at->translatedFormat('j M в H:i');
+
+            return response()->json([
+                'message' => "Энергия {$window} закончилась — восстановится в {$when}.",
+                'limit' => ['kind' => $exceeded['kind'], 'resets_at' => $exceeded['resets_at']->toIso8601String()],
+            ], 429);
         }
 
         // Модель есть в каталоге, но у текущего провайдера не подключена — отправлять некуда

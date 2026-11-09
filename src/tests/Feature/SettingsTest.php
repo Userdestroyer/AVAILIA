@@ -17,20 +17,23 @@ class SettingsTest extends TestCase
     protected bool $seed = true;
 
     #[Group('D2')]
-    public function test_theme_is_saved_and_rendered_before_first_paint(): void
+    public function test_appearance_is_saved_and_rendered_before_first_paint(): void
     {
         $user = User::factory()->create(['settings' => ['other' => 'kept']]);
         $this->actingAs($user);
 
-        // Тему в аккаунте не выбирали — берётся из куки этого браузера, а не «светлая по умолчанию»
-        $this->withUnencryptedCookie('theme', 'dark')->get('/text')->assertSee('data-theme="dark"', false);
+        // В аккаунте не выбирали — берётся из кук этого браузера, иначе по умолчанию (JIVA, Jura)
+        $this->withUnencryptedCookie('theme', 'dark')->withUnencryptedCookie('style', 'classic')->get('/text')
+            ->assertSee('data-style="classic" data-theme="dark" data-font="jura"', false);
 
         $this->patchJson('/settings', ['theme' => 'neon'])->assertUnprocessable();
-        $this->patchJson('/settings', ['theme' => 'light'])->assertNoContent();
+        $this->patchJson('/settings', ['style' => 'vista'])->assertUnprocessable();
+        $this->patchJson('/settings', ['theme' => 'light', 'style' => 'jiva', 'font' => 'exo2'])->assertNoContent();
 
-        $this->assertSame(['other' => 'kept', 'theme' => 'light'], $user->fresh()->settings);
-        // Выбранная в аккаунте важнее куки
-        $this->withUnencryptedCookie('theme', 'dark')->get('/text')->assertSee('data-theme="light"', false);
+        $this->assertSame(['other' => 'kept', 'theme' => 'light', 'style' => 'jiva', 'font' => 'exo2'], $user->fresh()->settings);
+        // Выбранное в аккаунте важнее кук
+        $this->withUnencryptedCookie('theme', 'dark')->withUnencryptedCookie('style', 'classic')->get('/text')
+            ->assertSee('data-style="jiva" data-theme="light" data-font="exo2"', false);
     }
 
     #[Group('D2')]

@@ -166,6 +166,8 @@ case "$CMD" in
             $EXEC php php artisan migrate --force
             # Справочники идемпотентны — новые модели, возможности и т.п. доезжают при каждом обновлении
             $EXEC php php artisan db:seed --force
+            # Ежемесячные токены контента: повторно не начисляет — безопасно при каждом обновлении
+            $EXEC php php artisan limits:grant-tokens
             $EXEC php php artisan config:cache
             $EXEC php php artisan route:cache
             $EXEC php php artisan view:cache
@@ -178,6 +180,7 @@ case "$CMD" in
             $DC run --rm npm run build
             $EXEC php php artisan migrate
             $EXEC php php artisan db:seed
+            $EXEC php php artisan limits:grant-tokens
             $EXEC php php artisan config:clear
             $EXEC php php artisan route:clear
             $EXEC php php artisan view:clear

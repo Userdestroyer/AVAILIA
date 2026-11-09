@@ -7,7 +7,6 @@ use App\Enums\MessageStatus;
 use App\Jobs\GenerateChatTitle;
 use App\Models\AiModel;
 use App\Models\Chat;
-use App\Models\Plan;
 use App\Models\Provider;
 use App\Models\ProviderModel;
 use App\Services\Ai\ProviderRegistry;
@@ -184,28 +183,10 @@ class SendMessageTest extends TestCase
     }
 
     #[Group('D1')]
-    #[TestDox('Сверх дневного лимита тарифа запрос не уходит к модели; мульти-запрос считается по числу моделей')]
-    public function test_daily_plan_limit_blocks_requests(): void
+    #[TestDox('Чужое сообщение и пишущийся ответ удалить нельзя; своё удаляется мягко')]
+    public function test_deleting_messages_respects_ownership(): void
     {
-        Redis::shouldReceive('connection')->never();
-
-        $user = User::factory()->create(['plan_id' => Plan::where('code', 'pro')->value('id')]);
-        $user->plan->update(['daily_request_limit' => 2]);
-        $chat = $user->chats()->create();
-        $chat->messages()->create(['role' => MessageRole::Assistant, 'status' => MessageStatus::Done]);
-
-        // Осталась 1 попытка, а моделей — 2
-        $this->actingAs($user)
-            ->postJson('/text/messages', ['chat_id' => $chat->id, 'ai_model_ids' => AiModel::limit(2)->pluck('id')->all(), 'content' => 'Ещё'])
-            ->assertTooManyRequests();
-    }
-
-    #[Group('D1')]
-    #[TestDox('Удалённые ответы остаются в дневном лимите; чужое сообщение и пишущийся ответ удалить нельзя')]
-    public function test_deleting_messages_keeps_limits_and_ownership(): void
-    {
-        $user = User::factory()->create(['plan_id' => Plan::where('code', 'pro')->value('id')]);
-        $user->plan->update(['daily_request_limit' => 1]);
+        $user = User::factory()->create();
         $chat = $user->chats()->create();
         $question = $chat->messages()->create(['role' => MessageRole::User, 'content' => 'Вопрос']);
         $answer = $chat->messages()->create(['parent_id' => $question->id, 'role' => MessageRole::Assistant, 'status' => MessageStatus::Done]);
@@ -217,11 +198,6 @@ class SendMessageTest extends TestCase
         $this->deleteJson("/text/messages/{$streaming->id}")->assertConflict();
         $this->deleteJson("/text/messages/{$answer->id}")->assertNoContent();
         $this->assertSoftDeleted($answer);
-
-        // Удалили ответ — а лимит на сегодня всё равно исчерпан
-        Redis::shouldReceive('connection')->never();
-        $this->postJson('/text/messages', ['chat_id' => $chat->id, 'ai_model_ids' => [AiModel::first()->id], 'content' => 'Ещё'])
-            ->assertTooManyRequests();
     }
 
     #[Group('D2')]

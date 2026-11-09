@@ -1,43 +1,22 @@
 /**
- * Палитры тем фона. Цвета — RGB 0–1.
- * CSS-цвета стекла и фона страницы — в app.css (:root / [data-theme='dark']), держать в паре с этим файлом.
+ * Оформление: стиль × схема × шрифт акцентов. Значения — в паре с App\Support\Appearance;
+ * цвета — в app.css (CSS-токены) и resources/js/backgrounds/<стиль>.js (полотно фона).
  */
+export const STYLES = {
+    jiva: { label: 'JIVA', hint: 'Y2K-стекло, светящиеся ленты' },
+    classic: { label: 'Матовое стекло', hint: 'Исходный стиль, вены и огонь' },
+};
+
 export const THEMES = {
-    light: {
-        label: 'Светлая',
-        // Полотно под всполохами: низ и верх вертикального градиента
-        canvasLow: [0.17, 0.2, 0.27],
-        canvasHigh: [0.33, 0.37, 0.45],
-        // Вены в покое: основной цвет и отсвет с одного края
-        idleMain: [0.36, 0.56, 1.0],
-        idleSide: [1.0, 0.55, 0.32],
-        idleSideMix: 0.55,
-        // Яркость вен в покое: тише, чтобы не спорить с текстом
-        idleGlow: 0.75,
-        // Насколько матовое стекло приглушает свет под собой (в паре с --glass-dim в app.css)
-        glassDim: 0.69,
-    },
-    dark: {
-        label: 'Тёмная',
-        // Графит
-        canvasLow: [0.055, 0.06, 0.07],
-        canvasHigh: [0.15, 0.16, 0.175],
-        // Свеча: тусклый тёплый огонь с фиолетовым краем
-        idleMain: [0.95, 0.56, 0.26],
-        idleSide: [0.58, 0.4, 0.88],
-        idleSideMix: 0.6,
-        idleGlow: 0.55,
-        glassDim: 0.63,
-    },
+    light: { label: 'Светлая' },
+    dark: { label: 'Тёмная' },
 };
 
-/**
- * Модель думает или стримит: в обеих темах — огонь, ярче покоя.
- */
-export const FIRE = {
-    main: [1.0, 0.42, 0.16],
-    side: [1.0, 0.68, 0.36],
-    glow: 1.2,
+// Шрифты акцентов стиля JIVA: логотип, слоганы, подписи разрядкой
+export const FONTS = {
+    jura: { label: 'Jura', family: 'Jura' },
+    exo2: { label: 'Exo 2', family: 'Exo 2' },
+    unbounded: { label: 'Unbounded', family: 'Unbounded' },
 };
 
-export const DEFAULT_THEME = 'light';
+export const DEFAULTS = { style: 'jiva', theme: 'light', font: 'jura' };

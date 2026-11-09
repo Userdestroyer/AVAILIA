@@ -5,7 +5,7 @@ import { computed, onBeforeUnmount, ref } from 'vue';
 import { useMediaQuery } from '@/composables/useMediaQuery';
 import { useSidebar } from '@/composables/useSidebar';
 import { deleteJson } from '@/lib/http';
-import CausticBackground from '@/components/CausticBackground.vue';
+import AppBackground from '@/components/AppBackground.vue';
 import SettingsModal from '@/components/SettingsModal.vue';
 import { useThinking } from '@/composables/useThinking';
 
@@ -24,6 +24,30 @@ const hiddenChats = ref(new Set());
 const recentChats = computed(() => (page.props.recentChats ?? []).filter((chat) => !hiddenChats.value.has(chat.id)));
 const historyOpen = ref(true);
 const settingsOpen = ref(false);
+
+// Время у чата в истории: сегодня — часы, дальше «Вчера», «Позавчера», потом дата
+const DAY = 86_400_000;
+const when = (iso) => {
+    if (!iso) return '';
+    const date = new Date(iso);
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+    const days = Math.ceil((start - date) / DAY);
+    if (date >= start) return date.toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' });
+    if (days <= 1) return 'Вчера';
+    if (days === 2) return 'Позавчера';
+    return date.toLocaleDateString('ru', { day: 'numeric', month: 'short' }).replace('.', '');
+};
+
+// Связь с сервером: браузер знает, что сеть пропала, раньше любого запроса
+const online = ref(navigator.onLine);
+const setOnline = () => (online.value = navigator.onLine);
+window.addEventListener('online', setOnline);
+window.addEventListener('offline', setOnline);
+onBeforeUnmount(() => {
+    window.removeEventListener('online', setOnline);
+    window.removeEventListener('offline', setOnline);
+});
 const settingsTab = ref('context');
 const openSettings = (tab) => {
     settingsTab.value = tab;
@@ -58,7 +82,7 @@ const deleteChat = async (id) => {
 </script>
 
 <template>
-    <CausticBackground :thinking="thinking" />
+    <AppBackground :thinking="thinking" />
     <SettingsModal v-model:open="settingsOpen" v-model:tab="settingsTab" />
 
     <!-- Под открытой шторкой всё размывается; тап мимо — закрыть -->
@@ -79,21 +103,21 @@ const deleteChat = async (id) => {
                     <span class="flex size-9 items-center justify-center rounded-xl bg-gradient-to-br from-cool to-[#7c5cff] shadow-lg shadow-cool/30">
                         <Sparkle class="size-4 fill-white text-white" />
                     </span>
-                    <span class="text-lg font-normal tracking-wide">AVAILIA</span>
+                    <span class="brand text-[15px] font-normal md:text-base">Availia</span>
                 </div>
-                <Link href="/text" class="glass-inset rounded-xl p-2 text-white/70 hover:text-white" title="Новый чат">
+                <Link href="/text" class="glass-inset rounded-xl p-2 text-fg/70 hover:text-fg" title="Новый чат">
                     <SquarePen class="vein size-4" :stroke-width="1.5" />
                 </Link>
             </div>
 
             <nav class="mt-4 space-y-1">
-                <Link href="/text" class="glass-inset flex items-center gap-3 rounded-2xl px-4 py-3 text-[15px]">
+                <Link href="/text" class="glass-accent flex items-center gap-3 rounded-2xl px-4 py-3 text-[15px]">
                     <MessageSquare class="size-[18px] text-cool-soft" :stroke-width="1.5" />
                     Новый чат
                 </Link>
                 <button
                     type="button"
-                    class="flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-[15px] text-white/80 hover:bg-white/5"
+                    class="flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-[15px] text-fg/80 hover:bg-fg/5"
                     @click="historyOpen = !historyOpen"
                 >
                     <History class="vein size-[18px]" :stroke-width="1.5" />
@@ -104,12 +128,17 @@ const deleteChat = async (id) => {
 
             <ul v-if="historyOpen" class="scrollbar-glass -mr-1 min-h-0 flex-1 space-y-0.5 overflow-y-auto pr-1 pl-2">
                 <li v-for="chat in recentChats" :key="chat.id" class="group relative">
+                    <!-- Подгружается при наведении — к клику чат уже на месте -->
                     <Link
                         :href="`/text/${chat.id}`"
-                        class="block truncate rounded-xl py-2 pr-10 pl-4 text-sm text-white/65 hover:bg-white/5 hover:text-white"
-                        :class="{ 'bg-white/8 text-white': isActive(chat.id) }"
+                        prefetch="hover"
+                        cache-for="5s"
+                        class="flex items-center gap-2 rounded-xl py-2 pr-2 pl-4 text-sm text-fg/65 hover:bg-fg/5 hover:text-fg"
+                        :class="{ 'bg-fg/8 text-fg': isActive(chat.id) }"
                     >
-                        {{ chat.title || 'Без названия' }}
+                        <span class="min-w-0 flex-1 truncate">{{ chat.title || 'Без названия' }}</span>
+                        <!-- Время уступает место урне при наведении -->
+                        <span class="shrink-0 text-[11px] text-fg/40 tabular-nums transition group-hover:opacity-0">{{ when(chat.updated_at) }}</span>
                     </Link>
                     <button
                         v-if="confirming === chat.id"
@@ -122,49 +151,49 @@ const deleteChat = async (id) => {
                     <button
                         v-else
                         type="button"
-                        class="absolute top-1/2 right-1.5 -translate-y-1/2 rounded-lg p-1.5 text-white/40 opacity-0 transition group-hover:opacity-100 hover:bg-white/5 hover:text-hot-soft focus-visible:opacity-100"
+                        class="absolute top-1/2 right-1.5 -translate-y-1/2 rounded-lg p-1.5 text-fg/40 opacity-0 transition group-hover:opacity-100 hover:bg-fg/5 hover:text-hot-soft focus-visible:opacity-100"
                         title="Удалить чат"
                         @click="askDelete(chat.id)"
                     >
                         <Trash2 class="size-3.5" :stroke-width="1.5" />
                     </button>
                 </li>
-                <li v-if="!recentChats.length" class="px-4 py-2 text-sm text-white/40">Пока пусто</li>
+                <li v-if="!recentChats.length" class="px-4 py-2 text-sm text-fg/40">Пока пусто</li>
             </ul>
 
             <div class="mt-auto space-y-1 pt-2">
                 <button
                     type="button"
-                    class="flex w-full items-center gap-3 rounded-2xl px-4 py-2.5 text-[15px] text-white/80 hover:bg-white/5"
+                    class="flex w-full items-center gap-3 rounded-2xl px-4 py-2.5 text-[15px] text-fg/80 hover:bg-fg/5"
                     @click="openSettings('appearance')"
                 >
                     <Settings class="vein size-[18px]" :stroke-width="1.5" />
                     Настройки
                 </button>
-                <button type="button" class="flex w-full items-center gap-3 rounded-2xl px-4 py-2.5 text-[15px] text-white/80 hover:bg-white/5">
+                <button type="button" class="flex w-full items-center gap-3 rounded-2xl px-4 py-2.5 text-[15px] text-fg/80 hover:bg-fg/5">
                     <CircleHelp class="vein size-[18px]" :stroke-width="1.5" />
                     Помощь
                 </button>
 
-                <div class="mt-2 flex items-center gap-1 border-t border-white/10 pt-2">
+                <div class="mt-2 flex items-center gap-1 border-t border-fg/10 pt-2">
                     <!-- Профиль: «Обо мне» — картриджи контекста -->
                     <button
                         type="button"
-                        class="flex min-w-0 flex-1 items-center gap-3 rounded-2xl px-4 py-1.5 text-left hover:bg-white/5"
+                        class="flex min-w-0 flex-1 items-center gap-3 rounded-2xl px-4 py-1.5 text-left hover:bg-fg/5"
                         title="Обо мне — картриджи контекста"
                         @click="openSettings('context')"
                     >
                         <Disc3 class="vein size-[18px] shrink-0" :stroke-width="1.5" />
                         <span class="min-w-0">
                             <span class="block truncate text-sm">{{ user.username }}</span>
-                            <span class="block text-xs text-white/50">{{ user.plan.name }} · Обо мне</span>
+                            <span class="block text-xs text-fg/50">{{ user.plan.name }} · Обо мне</span>
                         </span>
                     </button>
                     <Link
                         href="/logout"
                         method="post"
                         as="button"
-                        class="ml-auto rounded-lg p-1.5 text-white/50 hover:bg-white/5 hover:text-white"
+                        class="ml-auto rounded-lg p-1.5 text-fg/50 hover:bg-fg/5 hover:text-fg"
                         title="Выйти"
                     >
                         <LogOut class="vein size-4" :stroke-width="1.5" />
@@ -177,4 +206,16 @@ const deleteChat = async (id) => {
             <slot />
         </main>
     </div>
+
+    <!-- Строка статуса — в нижнем поле экрана, на десктопе -->
+    <footer class="pointer-events-none fixed inset-x-0 bottom-0 hidden h-6 items-center justify-between px-8 md:flex" aria-live="polite">
+        <span class="flex items-center gap-2 text-[11px] text-fg/55">
+            <span class="size-1.5 rounded-full" :class="online ? 'bg-emerald-400 shadow-[0_0_8px_rgb(52_211_153/0.9)]' : 'bg-hot shadow-[0_0_8px_var(--color-hot)]'" />
+            {{ online ? 'Система онлайн' : 'Нет связи' }}
+        </span>
+        <span class="brand flex items-center gap-3 text-[10px] text-fg/45">
+            <span class="h-px w-12 bg-fg/30" />
+            Больше моделей. Ближе к вам.
+        </span>
+    </footer>
 </template>

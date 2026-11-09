@@ -23,8 +23,8 @@ const MODES = {
     <ModeShell>
         <div class="flex flex-1 flex-col items-center justify-center px-4 text-center">
             <component :is="MODES[mode].icon" class="size-12 text-cool-soft" :stroke-width="1" />
-            <h1 class="mt-6 text-4xl font-extralight tracking-tight text-white/90">{{ MODES[mode].title }}</h1>
-            <p class="mt-4 text-lg font-light text-white/60">{{ MODES[mode].text }} — скоро</p>
+            <h1 class="mt-6 text-4xl font-extralight tracking-tight text-fg/90">{{ MODES[mode].title }}</h1>
+            <p class="mt-4 text-lg font-light text-fg/60">{{ MODES[mode].text }} — скоро</p>
         </div>
     </ModeShell>
 </template>
