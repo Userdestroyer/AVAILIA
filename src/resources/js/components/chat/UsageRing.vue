@@ -104,6 +104,10 @@ const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
                         :style="{ width: `${percent(text[kind])}%`, background: tone(percent(text[kind])), boxShadow: `0 0 8px ${tone(percent(text[kind]))}` }"
                     />
                 </div>
+                <!-- Неделя — 7 отрезков-дней: видно, сколько «дней» уже потрачено -->
+                <div v-if="kind === 'week' && text[kind]?.limit" class="relative -mt-1 h-1" aria-hidden="true">
+                    <span v-for="day in 6" :key="day" class="absolute top-0 h-[3px] w-px bg-fg/20" :style="{ left: `${(day * 100) / 7}%` }" />
+                </div>
                 <div class="text-[11px] text-fg/45">{{ resets(text[kind]) }}</div>
             </div>
 
