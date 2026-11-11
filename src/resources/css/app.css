@@ -13,8 +13,14 @@
 
     /* Основной цвет текста и контуров: белый на тёмном стекле, тёмно-синий на светлом JIVA */
     --color-fg: var(--fg);
-    --color-cool: #5b8cff;
-    --color-cool-soft: #9db8ff;
+    /* Текст прямо на фоне (не на стекле): логотип пустого чата, подсказки, строка статуса */
+    --color-on-sky: var(--on-sky);
+    /* Тень текста на фоне — читается и на светлом горизонте */
+    --text-shadow-sky: 0 1px 10px var(--on-sky-shadow);
+    --color-on-sky-accent: var(--on-sky-accent);
+    /* Акцент — свой у стиля: в JIVA насыщенный дневной синий */
+    --color-cool: var(--accent);
+    --color-cool-soft: var(--accent-soft);
     --color-hot: #ff8a4c;
     --color-hot-soft: #ffc29a;
 }
@@ -29,6 +35,13 @@
 :root {
     --app-bg: #2a3142;
     --fg: #fff;
+    --accent: #5b8cff;
+    --accent-soft: #9db8ff;
+    /* Верх градиента кнопки отправки */
+    --accent-hi: #6b9bff;
+    --on-sky: var(--fg);
+    --on-sky-accent: var(--accent-text);
+    --on-sky-shadow: transparent;
     --accent-family: var(--font-sans);
     --brand-tracking: 0.04em;
     --glass-bg: rgb(200 210 230 / 0.14);
@@ -42,11 +55,12 @@
     --inset-bg: rgb(255 255 255 / 0.07);
     --inset-border: rgb(255 255 255 / 0.06);
     --accent-surface: var(--inset-bg);
-    --accent-surface-border: var(--inset-border);
+    --accent-rim: var(--inset-border);
     --accent-surface-shadow: none;
     --bubble-bg: rgb(255 255 255 / 0.1);
     /* Активный пункт переключателей */
     --pill-bg: rgb(255 255 255 / 0.14);
+    --pill-rim: transparent;
     --pill-fg: #fff;
     --pill-shadow: 0 1px 2px rgb(0 0 0 / 0.1), inset 0 1px 0 rgb(255 255 255 / 0.15);
     --toggle-glow: none;
@@ -76,62 +90,91 @@
     --vein-soft: rgb(150 150 156);
 }
 
-/* JIVA, светлая — небесное Y2K-стекло: молочное, со светящейся белой кромкой, тёмно-синий текст */
+/* JIVA, светлая — дневная синяя: прозрачное синеватое стекло с глянцем по верху, белый текст везде,
+   выбранное — «карамельки» (Aqua / Frutiger Aero) */
 :root[data-style='jiva'] {
-    --app-bg: #5d8fe6;
-    --fg: #13296b;
+    --app-bg: #2f6fe0;
+    --fg: #fff;
+    --accent: #1f6bff;
+    --accent-soft: #8fd0ff;
+    --accent-hi: #45b4ff;
+    --on-sky: #fff;
+    --on-sky-accent: #cfe6ff;
+    --on-sky-shadow: rgb(10 40 130 / 0.45);
     --accent-family: 'Jura', var(--font-sans);
     --brand-tracking: 0.42em;
-    --glass-bg: rgb(255 255 255 / 0.16);
-    --glass-noise: none;
-    --glass-border: rgb(255 255 255 / 0.7);
+    --glass-bg: rgb(70 130 255 / 0.088);
+    /* Глянцевый блик по верху стекла */
+    --glass-noise: linear-gradient(180deg, rgb(255 255 255 / 0.19), rgb(255 255 255 / 0) 96px);
+    --glass-border: rgb(255 255 255 / 0.9);
+    /* Светящаяся кромка: яркая линия по верху и внутренний ореол; снаружи — едва заметно, как на рефах */
     --glass-shadow:
         inset 0 1px 0 rgb(255 255 255 / 0.95),
-        inset 0 0 26px rgb(255 255 255 / 0.42),
-        inset 0 -10px 22px -12px rgb(255 255 255 / 0.8),
-        0 0 22px rgb(255 255 255 / 0.22),
-        0 26px 50px -30px rgb(20 50 120 / 0.5);
-    --glass-dim: 1.04;
-    --inset-bg: rgb(255 255 255 / 0.3);
-    --inset-border: rgb(255 255 255 / 0.65);
-    --accent-surface: linear-gradient(180deg, rgb(255 255 255 / 0.5), rgb(190 215 255 / 0.35));
-    --accent-surface-border: rgb(255 255 255 / 0.95);
-    --accent-surface-shadow: 0 0 16px rgb(110 160 255 / 0.45), inset 0 0 10px rgb(255 255 255 / 0.6);
-    --bubble-bg: rgb(255 255 255 / 0.42);
-    --pill-bg: linear-gradient(180deg, #5a95ff 0%, #2a5fe6 100%);
+        inset 0 0 0 1px rgb(190 232 255 / 0.35),
+        inset 0 0 18px rgb(150 215 255 / 0.42),
+        inset 0 -10px 22px -12px rgb(170 225 255 / 0.6),
+        0 0 8px rgb(120 200 255 / 0.12),
+        0 26px 50px -30px rgb(10 30 110 / 0.55);
+    --glass-dim: 0.92;
+    --inset-bg: rgb(255 255 255 / 0.105);
+    --inset-border: rgb(255 255 255 / 0.48);
+    --accent-surface: linear-gradient(180deg, rgb(255 255 255 / 0.24), rgb(140 190 255 / 0.1));
+    --accent-rim: linear-gradient(110deg, #fff 0%, #8fe1ff 25%, #3d86ff 55%, rgb(150 130 255 / 0.55) 85%, #ffd9f5 100%);
+    --accent-surface-shadow: inset 0 0 14px rgb(120 210 255 / 0.5), inset 0 1px 1px #fff, 0 0 14px rgb(80 160 255 / 0.45);
+    --bubble-bg: rgb(255 255 255 / 0.16);
+    /* Карамелька: резкий глянец в верхней половине, светящееся дно, насыщенное тело */
+    --pill-bg:
+        linear-gradient(180deg, rgb(255 255 255 / 0.78) 0%, rgb(255 255 255 / 0.3) 46%, rgb(255 255 255 / 0) 50%),
+        radial-gradient(85% 70% at 50% 115%, rgb(140 235 255 / 0.95), rgb(140 235 255 / 0) 70%),
+        linear-gradient(180deg, #4f9dff 0%, #1d5cf2 100%);
+    --pill-rim: linear-gradient(180deg, #fff, #a6e9ff 35%, #3b8bff 70%, #8fe0ff);
     --pill-fg: #fff;
-    --pill-shadow: 0 0 16px rgb(60 120 255 / 0.5), inset 0 1px 0 rgb(255 255 255 / 0.55);
-    --toggle-glow: 0 0 12px rgb(60 120 255 / 0.6);
-    --accent-text: #2a5fe6;
-    --send-glow: 0 0 20px rgb(60 120 255 / 0.65);
-    --popover-bg: rgb(236 243 255 / 0.97);
-    --pre-bg: rgb(10 25 70 / 0.88);
-    --scrollbar: rgb(20 50 130 / 0.25);
-    /* На светлом стекле «вырезки» — обычные тёмно-синие контуры: осветление сделало бы их невидимыми */
-    --vein: rgb(19 41 107 / 0.62);
-    --vein-soft: rgb(19 41 107 / 0.22);
-    --vein-blend: normal;
+    --pill-shadow: 0 0 14px rgb(60 150 255 / 0.65), 0 3px 8px rgb(10 40 140 / 0.35), inset 0 -3px 8px rgb(150 235 255 / 0.55), inset 0 1px 0 rgb(255 255 255 / 0.9);
+    --toggle-glow: 0 0 12px rgb(80 170 255 / 0.7);
+    --accent-text: #cfe6ff;
+    --send-glow: 0 0 20px rgb(60 150 255 / 0.65);
+    --popover-bg: rgb(28 78 205 / 0.97);
+    --pre-bg: rgb(8 22 70 / 0.62);
+    --scrollbar: rgb(255 255 255 / 0.35);
+    /* Белые контуры на синем стекле — «вырезки» снова с осветлением, как в тёмной схеме */
+    --vein: rgb(205 225 255);
+    --vein-soft: rgb(140 175 235);
+    --vein-blend: color-dodge;
 }
 
 /* JIVA, тёмная — ночное стекло: почти прозрачное, с голубым внутренним свечением и светящейся кромкой */
 :root[data-style='jiva'][data-theme='dark'] {
     --app-bg: #030a26;
     --fg: #eef4ff;
-    --glass-bg: rgb(30 60 150 / 0.1);
-    --glass-border: rgb(130 175 255 / 0.4);
+    --accent: #3d87ff;
+    --accent-soft: #8cc8ff;
+    --accent-hi: #52c2ff;
+    --on-sky: var(--fg);
+    --on-sky-accent: var(--accent-text);
+    --glass-bg: rgb(30 60 150 / 0.088);
+    --glass-border: rgb(160 210 255 / 0.75);
+    /* Блик — голубой, а не белый: белый на ночном стекле даёт серую плёнку */
+    --glass-noise: linear-gradient(180deg, rgb(110 170 255 / 0.1), rgb(110 170 255 / 0) 96px);
     --glass-shadow:
-        inset 0 1px 0 rgb(200 225 255 / 0.4),
-        inset 0 0 30px rgb(70 130 255 / 0.2),
-        inset 0 -10px 24px -12px rgb(90 150 255 / 0.38),
-        0 0 24px rgb(60 120 255 / 0.18),
+        inset 0 1px 0 rgb(200 232 255 / 0.6),
+        inset 0 0 0 1px rgb(90 165 255 / 0.25),
+        inset 0 0 26px rgb(70 140 255 / 0.3),
+        inset 0 -10px 24px -12px rgb(90 160 255 / 0.45),
+        0 0 8px rgb(60 135 255 / 0.12),
         0 30px 60px -30px rgb(0 0 0 / 0.6);
     --glass-dim: 0.8;
-    --inset-bg: rgb(120 160 255 / 0.07);
-    --inset-border: rgb(140 180 255 / 0.2);
-    --accent-surface: linear-gradient(180deg, rgb(90 140 255 / 0.22), rgb(40 80 200 / 0.12));
-    --accent-surface-border: rgb(120 170 255 / 0.85);
-    --accent-surface-shadow: 0 0 16px rgb(60 120 255 / 0.5), inset 0 0 14px rgb(70 130 255 / 0.3);
-    --bubble-bg: rgb(80 130 255 / 0.16);
+    --inset-bg: rgb(120 160 255 / 0.062);
+    --inset-border: rgb(150 195 255 / 0.3);
+    --accent-surface: linear-gradient(180deg, rgb(140 190 255 / 0.16), rgb(40 80 200 / 0.08));
+    --accent-rim: linear-gradient(110deg, #c8f1ff 0%, #5cc8ff 25%, #3d7bff 55%, rgb(140 100 255 / 0.6) 85%, #d9a8ff 100%);
+    --accent-surface-shadow: inset 0 0 16px rgb(70 150 255 / 0.4), inset 0 1px 1px rgb(200 230 255 / 0.6), 0 0 16px rgb(60 120 255 / 0.45);
+    --pill-bg:
+        linear-gradient(180deg, rgb(255 255 255 / 0.55) 0%, rgb(255 255 255 / 0.18) 46%, rgb(255 255 255 / 0) 50%),
+        radial-gradient(85% 70% at 50% 115%, rgb(110 220 255 / 0.85), rgb(110 220 255 / 0) 70%),
+        linear-gradient(180deg, #2f78ff 0%, #1240c8 100%);
+    --pill-rim: linear-gradient(110deg, #d4f4ff 0%, #5cc8ff 22%, #3d7bff 50%, rgb(140 100 255 / 0.7) 82%, #e0b0ff 100%);
+    --pill-shadow: inset 0 0 12px rgb(90 180 255 / 0.55), inset 0 1px 1px rgb(220 240 255 / 0.7), 0 0 16px rgb(60 130 255 / 0.55);
+    --bubble-bg: rgb(80 130 255 / 0.14);
     --popover-bg: rgb(10 22 66 / 0.96);
     --accent-text: var(--color-cool-soft);
     --pre-bg: rgb(0 8 30 / 0.55);
@@ -150,10 +193,6 @@
         color-scheme: dark;
         font-feature-settings: 'cv11', 'ss01';
         -webkit-font-smoothing: antialiased;
-    }
-
-    :root[data-style='jiva']:not([data-theme='dark']) {
-        color-scheme: light;
     }
 
     body {
@@ -195,16 +234,41 @@
 
 /* Главная кнопка на стекле («Новый чат»): в JIVA — светящийся контур */
 @utility glass-accent {
+    position: relative;
     background: var(--accent-surface);
-    border: 1px solid var(--accent-surface-border);
     box-shadow: var(--accent-surface-shadow);
+
+    /* Ободок — отдельным слоем с маской: светится только кромка, тело остаётся прозрачным */
+    &::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        padding: 1px;
+        border-radius: inherit;
+        background: var(--accent-rim);
+        mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+        pointer-events: none;
+    }
 }
 
-/* Активный пункт переключателя: в JIVA — синяя капсула со свечением */
+/* Активный пункт переключателя. В JIVA — подсвеченное стёклышко: будто к срезу поднесли фонарик —
+   светится весь ободок (рамка-градиент, ярче со стороны света) и немного стекло внутри */
 @utility pill-active {
+    position: relative;
     background: var(--pill-bg);
     color: var(--pill-fg);
     box-shadow: var(--pill-shadow);
+
+    &::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        padding: 1px;
+        border-radius: inherit;
+        background: var(--pill-rim);
+        mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+        pointer-events: none;
+    }
 }
 
 /* Логотип и подписи разрядкой — шрифт акцентов */

@@ -261,7 +261,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
                                         <button
                                             type="button"
                                             :disabled="!plate.draft.title.trim()"
-                                            class="rounded-lg bg-cool px-3 py-1 text-white shadow-lg shadow-cool/30 transition hover:bg-[#6b9bff] disabled:opacity-40"
+                                            class="rounded-lg bg-cool px-3 py-1 text-white shadow-lg shadow-cool/30 transition hover:bg-(--accent-hi) disabled:opacity-40"
                                             title="Сохранить (⌘/Ctrl+S)"
                                             @click="onSave(plate)"
                                         >

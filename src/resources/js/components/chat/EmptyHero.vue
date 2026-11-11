@@ -20,8 +20,8 @@
             <circle cx="110" cy="8" r="3.5" fill="var(--color-cool-soft)" class="hero-glow" />
         </svg>
 
-        <h1 class="brand mt-3 text-3xl font-light text-fg/95 md:text-5xl">Availia</h1>
-        <p class="brand mt-3 text-[10px] text-(--accent-text) md:text-xs">Все нейросети — в одной точке</p>
+        <h1 class="brand mt-3 text-3xl font-light text-on-sky/95 [text-shadow:0_0_24px_rgb(91_140_255/0.45)] md:text-5xl">Availia</h1>
+        <p class="brand mt-3 text-[10px] text-on-sky-accent text-shadow-(--text-shadow-sky) md:text-xs">Все нейросети — в одной точке</p>
         <div class="mt-5 h-px w-40 bg-gradient-to-r from-transparent via-cool to-transparent shadow-[0_0_12px_var(--color-cool)]" />
     </div>
 </template>

@@ -642,7 +642,7 @@ const onKeydown = (event) => {
                     <button
                         type="submit"
                         :disabled="!message.trim() || busy || !!exhausted"
-                        class="flex size-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-b from-[#6b9bff] to-cool text-white shadow-(--send-glow) transition disabled:opacity-40 md:size-11"
+                        class="flex size-9 shrink-0 items-center justify-center rounded-full pill-active transition disabled:opacity-40 md:size-11"
                         title="Отправить"
                     >
                         <ArrowUp class="size-5" :stroke-width="2" />
@@ -653,8 +653,8 @@ const onKeydown = (event) => {
 
         <!-- Вторая половина пустого экрана — поле ввода стоит ровно по центру; тут же подсказка -->
         <div v-if="isEmpty" class="flex min-h-0 flex-1 flex-col items-center px-4 pt-3 text-center">
-            <p class="text-xs text-fg/45 md:text-sm">
-                <span class="text-fg/75">@модель</span> — спросить другую · <span class="text-fg/75">#тег</span> — подключить контекст о себе
+            <p class="text-xs text-on-sky/70 text-shadow-(--text-shadow-sky) md:text-sm">
+                <span class="text-on-sky/90">@модель</span> — спросить другую · <span class="text-on-sky/90">#тег</span> — подключить контекст о себе
             </p>
         </div>
 

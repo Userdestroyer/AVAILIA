@@ -209,12 +209,12 @@ const deleteChat = async (id) => {
 
     <!-- Строка статуса — в нижнем поле экрана, на десктопе -->
     <footer class="pointer-events-none fixed inset-x-0 bottom-0 hidden h-6 items-center justify-between px-8 md:flex" aria-live="polite">
-        <span class="flex items-center gap-2 text-[11px] text-fg/55">
+        <span class="flex items-center gap-2 text-[11px] text-on-sky/65">
             <span class="size-1.5 rounded-full" :class="online ? 'bg-emerald-400 shadow-[0_0_8px_rgb(52_211_153/0.9)]' : 'bg-hot shadow-[0_0_8px_var(--color-hot)]'" />
             {{ online ? 'Система онлайн' : 'Нет связи' }}
         </span>
-        <span class="brand flex items-center gap-3 text-[10px] text-fg/45">
-            <span class="h-px w-12 bg-fg/30" />
+        <span class="brand flex items-center gap-3 text-[10px] text-on-sky/55">
+            <span class="h-px w-12 bg-on-sky/40" />
             Больше моделей. Ближе к вам.
         </span>
     </footer>

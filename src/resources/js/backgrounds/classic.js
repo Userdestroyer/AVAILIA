@@ -131,13 +131,14 @@ void main() {
 const SPEED_IDLE = 0.025;
 const SPEED_THINKING = 0.035;
 
-export function create(canvas, { getThinking, getTheme }) {
+export function create(canvas, { getThinking, getTheme, onReady }) {
     const palette = structuredClone(PALETTES[getTheme()] ?? PALETTES.light);
     let think = getThinking() ? 1 : 0;
     // Фазу копим шагами dt × скорость: если умножать время на меняющуюся скорость, фон «мельтешит»
     let phase = Math.random() * 25;
 
     return runShader(canvas, {
+        onReady,
         fragment: FRAGMENT,
         // Фон размытый — рисуем в пониженном разрешении и растягиваем
         scale: 0.35,

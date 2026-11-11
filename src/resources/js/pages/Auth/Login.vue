@@ -61,7 +61,7 @@ const submit = () => {
             <button
                 type="submit"
                 :disabled="form.processing"
-                class="w-full rounded-2xl bg-gradient-to-b from-[#6b9bff] to-cool py-3 font-normal text-white shadow-lg shadow-cool/40 transition hover:brightness-110 disabled:opacity-50"
+                class="w-full rounded-2xl bg-gradient-to-b from-(--accent-hi) to-cool py-3 font-normal text-white shadow-lg shadow-cool/40 transition hover:brightness-110 disabled:opacity-50"
             >
                 Войти
             </button>

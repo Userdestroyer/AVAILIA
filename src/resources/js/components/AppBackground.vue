@@ -36,12 +36,16 @@ const mount = async (name) => {
     await nextTick();
     if (current !== generation || !canvas.value) return;
 
-    handle = module.create(canvas.value, { getThinking: () => props.thinking, getTheme: () => theme.value });
+    handle = module.create(canvas.value, {
+        getThinking: () => props.thinking,
+        getTheme: () => theme.value,
+        // Фон готов (у JIVA — запечён) — проявляем
+        onReady: () => current === generation && requestAnimationFrame(() => (visible.value = true)),
+    });
     // Шейдер рисует матовые подложки панелей сам — CSS снимает с них дорогой backdrop-filter.
     // Без WebGL атрибута нет, и панели размывает обычный CSS
     if (handle) document.documentElement.dataset.frost = 'gl';
     else delete document.documentElement.dataset.frost;
-    requestAnimationFrame(() => (visible.value = true));
 };
 
 const unmount = () => {
@@ -70,7 +74,8 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-    <div class="pointer-events-none fixed inset-0 -z-10 bg-(--app-bg) transition-colors duration-500">
+    <!-- Во всю высоту экрана (lvh): клавиатура и адресная строка не сжимают фон -->
+    <div class="pointer-events-none fixed inset-x-0 top-0 -z-10 h-lvh bg-(--app-bg) transition-colors duration-500">
         <canvas
             :key="canvasKey"
             ref="canvas"
