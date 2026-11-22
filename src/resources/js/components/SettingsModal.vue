@@ -95,14 +95,22 @@ const onRemove = async (plate) => {
     if (await remove(plate)) refreshChat();
 };
 
-// Поле растёт по тексту; считаем на следующем кадре — при монтировании высота ещё 0
-const autosize = (el) => {
-    if (!el) return;
-    requestAnimationFrame(() => {
-        el.style.height = 'auto';
-        if (el.scrollHeight) el.style.height = `${el.scrollHeight}px`;
-    });
+// Поле растёт по тексту. Для замера высота на миг сбрасывается — окно короче, и его прокрутка
+// прыгала бы на каждый символ: сохраняем её. Печатают в конце — строка ввода остаётся на экране
+const fit = (el) => {
+    const scroller = el.closest('.overflow-y-auto');
+    const top = scroller?.scrollTop ?? 0;
+    el.style.height = 'auto';
+    if (el.scrollHeight) el.style.height = `${el.scrollHeight}px`;
+    if (!scroller) return;
+    scroller.scrollTop = top;
+    if (document.activeElement === el && el.selectionEnd === el.value.length) {
+        const below = el.getBoundingClientRect().bottom - scroller.getBoundingClientRect().bottom + 16;
+        if (below > 0) scroller.scrollTop += below;
+    }
 };
+// При монтировании высота ещё 0 — замеряем на следующем кадре; при вводе — сразу, без мигания
+const autosize = (el) => el && requestAnimationFrame(() => fit(el));
 
 const onKeydown = (event) => {
     if (!open.value) return;
@@ -237,7 +245,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
                                         rows="4"
                                         placeholder="Что модели стоит знать: факты, предпочтения, контекст. Пишите как для умного коллеги."
                                         class="min-h-24 w-full resize-none bg-transparent text-[0.9rem] leading-relaxed outline-none placeholder:text-fg/35 md:text-[15px]"
-                                        @input="autosize($event.target)"
+                                        @input="fit($event.target)"
                                     />
                                 </div>
 

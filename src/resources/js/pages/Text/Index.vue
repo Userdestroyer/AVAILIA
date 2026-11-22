@@ -8,7 +8,7 @@ import AppLayout from '@/layouts/AppLayout.vue';
 import AnswerCard from '@/components/chat/AnswerCard.vue';
 import AnswerCarousel from '@/components/chat/AnswerCarousel.vue';
 import MessageActions from '@/components/chat/MessageActions.vue';
-import MessageFiles from '@/components/chat/MessageFiles.vue';
+import QuestionBubble from '@/components/chat/QuestionBubble.vue';
 import GlassToggle from '@/components/GlassToggle.vue';
 import ModelPicker from '@/components/ModelPicker.vue';
 import ModeShell from '@/components/ModeShell.vue';
@@ -20,7 +20,7 @@ import { fuzzy, useComposerMenu } from '@/composables/useComposerMenu';
 import { useChatPreferences } from '@/composables/useChatPreferences';
 import { useMediaQuery } from '@/composables/useMediaQuery';
 import { useThinking } from '@/composables/useThinking';
-import { deleteJson, postJson } from '@/lib/http';
+import { deleteJson, patchJson, postJson } from '@/lib/http';
 
 defineOptions({ layout: AppLayout });
 
@@ -153,20 +153,30 @@ const messages = ref([...props.messages]);
 const scroller = ref(null);
 
 // Ход разговора: вопрос и ответы на него (в мульти-запросе — несколько)
+// Ход — вопрос и ответы на него: по одному на модель (текущий вариант), все варианты — в variants
 const turns = computed(() => {
     const result = [];
     const byQuestion = new Map();
 
     for (const message of messages.value) {
         if (message.role === 'user') {
-            const turn = { question: message, answers: [] };
+            const turn = { question: message, all: [] };
             result.push(turn);
             byQuestion.set(message.id, turn);
         } else {
             const turn = byQuestion.get(message.parent_id) ?? result.at(-1);
-            if (turn) turn.answers.push(message);
-            else result.push({ question: null, answers: [message] });
+            if (turn) turn.all.push(message);
+            else result.push({ question: null, all: [message] });
         }
+    }
+
+    for (const turn of result) {
+        turn.variants = new Map();
+        for (const answer of turn.all) {
+            const key = answer.ai_model_id ?? answer.id;
+            turn.variants.set(key, [...(turn.variants.get(key) ?? []), answer]);
+        }
+        turn.answers = [...turn.variants.values()].map((group) => group.find((a) => a.is_current !== false) ?? group.at(-1));
     }
 
     return result;
@@ -409,6 +419,16 @@ watch(message, async () => {
 // а по http://<ip-в-локалке> отправка падала бы, оставив фон «думающим»
 let localSeq = 0;
 
+// Параметры ответа из панели — у нового вопроса и у регенерации одни и те же
+const responseOptions = () => ({
+    max_tokens: maxTokens.value,
+    reasoning_effort: deepThinking.value ? effort.value : null,
+    temperature: temperatureModels.value.length ? temperature.value : null,
+    web_search: webSearch.value,
+    max_web_searches: webSearch.value ? maxWebSearches.value : null,
+    allowed_domains: webSearch.value && allowedDomains.value.length ? allowedDomains.value : null,
+});
+
 const send = async () => {
     const content = message.value.trim();
     const sentFileIds = fileIds.value;
@@ -447,12 +467,7 @@ const send = async () => {
             content,
             plate_ids: attachedPlates.value,
             file_ids: sentFileIds,
-            max_tokens: maxTokens.value,
-            reasoning_effort: deepThinking.value ? effort.value : null,
-            temperature: temperatureModels.value.length ? temperature.value : null,
-            web_search: webSearch.value,
-            max_web_searches: webSearch.value ? maxWebSearches.value : null,
-            allowed_domains: webSearch.value && allowedDomains.value.length ? allowedDomains.value : null,
+            ...responseOptions(),
         });
     } catch (e) {
         messages.value.splice(local, 1);
@@ -548,6 +563,68 @@ const stream = (token, answer, sentAt) => {
 
 onBeforeUnmount(closeAllStreams);
 
+// ── Варианты ответа ────────────────────────────────────
+const variantsOf = (answer) =>
+    messages.value.filter((m) => m.role === 'assistant' && m.parent_id === answer.parent_id && (m.ai_model_id ?? m.id) === (answer.ai_model_id ?? answer.id));
+
+const makeCurrent = (variants, current) => variants.forEach((m) => (m.is_current = m === current));
+
+// Листаем сразу, запоминаем фоном (выбранный вариант модель увидит в истории); не вышло — как было
+const selectVariant = async (answer) => {
+    const variants = variantsOf(answer);
+    const previous = variants.find((m) => m.is_current !== false);
+    makeCurrent(variants, answer);
+    try {
+        await patchJson(`/text/messages/${answer.id}/current`);
+    } catch (e) {
+        makeCurrent(variants, previous);
+        error.value = e.message;
+    }
+};
+
+// Ещё один вариант: пустая карточка «Думаю…» — сразу, стрим — как у нового вопроса
+const regenerate = async (answer) => {
+    if (busy.value) return;
+    if (exhausted.value) {
+        error.value = exhausted.value;
+        return;
+    }
+
+    error.value = null;
+    sending.value = true;
+    const sentAt = performance.now();
+    const variants = variantsOf(answer);
+    messages.value.push({
+        id: `local-${++localSeq}`,
+        role: 'assistant',
+        parent_id: answer.parent_id,
+        ai_model_id: answer.ai_model_id,
+        model: answer.model,
+        status: 'pending',
+        content: '',
+        searches: [],
+        is_current: true,
+    });
+    const draft = messages.value.at(-1);
+    makeCurrent(variants, null);
+
+    let started;
+    try {
+        started = await postJson(`/text/messages/${answer.id}/regenerate`, responseOptions());
+    } catch (e) {
+        messages.value = messages.value.filter((m) => m !== draft);
+        makeCurrent(variants, answer);
+        error.value = e.message;
+        router.reload({ only: ['usage'] });
+        return;
+    } finally {
+        sending.value = false;
+    }
+
+    Object.assign(draft, { ...started.message, status: 'streaming' });
+    stream(started.stream_token, draft, sentAt);
+};
+
 // ── Удаление сообщений ─────────────────────────────────
 // Убираем сразу, удаляем фоном; не вышло — возвращаем как было
 const deleteMessage = async (message) => {
@@ -555,11 +632,16 @@ const deleteMessage = async (message) => {
     const gone = new Set([message.id]);
     // Вопрос — вместе с ответами на него
     if (message.role === 'user') messages.value.forEach((m) => m.parent_id === message.id && gone.add(m.id));
+    // Удаляют показанный вариант — показываем последний из оставшихся (как сделает сервер)
+    const rest = message.role === 'assistant' ? variantsOf(message).filter((m) => m !== message) : [];
+    const restored = rest.map((m) => m.is_current);
+    if (rest.length && message.is_current !== false) makeCurrent(rest, rest.at(-1));
     messages.value = messages.value.filter((m) => !gone.has(m.id));
 
     try {
         await deleteJson(`/text/messages/${message.id}`);
     } catch (e) {
+        rest.forEach((m, i) => (m.is_current = restored[i]));
         messages.value = snapshot;
         error.value = e.message;
     }
@@ -600,38 +682,33 @@ const onKeydown = (event) => {
             <div class="scroll-edge bottom-0 [--edge-to:top]" aria-hidden="true" />
             <div ref="scroller" class="scrollbar-glass flex-1 space-y-4 overflow-y-auto px-2 py-3 md:space-y-6 md:px-6 md:py-8">
                 <template v-for="(turn, index) in visibleTurns" :key="turn.question?.id ?? `t${renderFrom + index}`">
-                    <div v-if="turn.question" class="group flex flex-col items-end gap-0.5">
-                        <!-- Какие картриджи ушли с вопросом -->
-                        <div v-if="turn.question.context?.length" class="mb-0.5 flex max-w-[85%] flex-wrap justify-end gap-1">
-                            <span
-                                v-for="item in turn.question.context"
-                                :key="item.plate_id"
-                                class="flex items-center gap-1 text-[11px] text-fg/45"
-                                :title="`Картридж «${item.title}» был подключён к вопросу`"
-                            >
-                                <Disc3 class="vein size-3" :stroke-width="1.5" />
-                                {{ item.title }}
-                            </span>
-                        </div>
-                        <MessageFiles v-if="turn.question.files?.length" class="mb-0.5" :files="turn.question.files" />
-                        <div
-                            v-if="turn.question.content"
-                            class="max-w-[85%] rounded-2xl rounded-br-md bg-(--bubble-bg) px-3 py-2 text-[0.875rem] leading-relaxed whitespace-pre-wrap md:px-4 md:py-2.5 md:text-[16px]"
-                        >
-                            {{ turn.question.content }}
-                        </div>
-                        <!-- На телефоне видны всегда, на десктопе — при наведении -->
-                        <MessageActions
-                            class="transition md:opacity-0 md:group-focus-within:opacity-100 md:group-hover:opacity-100"
-                            :text="turn.question.content"
-                            :deletable="Number.isInteger(turn.question.id) && !turn.answers.some((a) => ['pending', 'streaming'].includes(a.status))"
-                            @delete="deleteMessage(turn.question)"
-                        />
-                    </div>
+                    <QuestionBubble
+                        v-if="turn.question"
+                        :question="turn.question"
+                        :deletable="Number.isInteger(turn.question.id) && !turn.all.some((a) => ['pending', 'streaming'].includes(a.status))"
+                        @delete="deleteMessage(turn.question)"
+                    />
 
                     <!-- Мульти-запрос — лента со свайпом, обычный — просто ответ -->
-                    <AnswerCarousel v-if="turn.answers.length > 1" class="-mx-2 md:-mx-6" :answers="turn.answers" @delete="deleteMessage" />
-                    <AnswerCard v-else-if="turn.answers.length" :answer="turn.answers[0]" @delete="deleteMessage" />
+                    <AnswerCarousel
+                        v-if="turn.answers.length > 1"
+                        class="-mx-2 md:-mx-6"
+                        :answers="turn.answers"
+                        :variants="turn.variants"
+                        :busy="busy"
+                        @delete="deleteMessage"
+                        @select="selectVariant"
+                        @regenerate="regenerate"
+                    />
+                    <AnswerCard
+                        v-else-if="turn.answers.length"
+                        :answer="turn.answers[0]"
+                        :variants="turn.variants.get(turn.answers[0].ai_model_id ?? turn.answers[0].id)"
+                        :busy="busy"
+                        @delete="deleteMessage"
+                        @select="selectVariant"
+                        @regenerate="regenerate"
+                    />
                 </template>
             </div>
         </div>

@@ -15,7 +15,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 #[Fillable([
     'chat_id', 'parent_id', 'ai_model_id', 'provider_id', 'role', 'status', 'content', 'error',
     'input_tokens', 'output_tokens', 'cache_read_tokens', 'cache_write_tokens', 'web_searches', 'search_log',
-    'cost', 'cost_currency', 'ttft_ms', 'client_ttft_ms', 'duration_ms', 'context',
+    'cost', 'cost_currency', 'ttft_ms', 'client_ttft_ms', 'duration_ms', 'context', 'is_current',
 ])]
 class Message extends Model
 {
@@ -33,6 +33,7 @@ class Message extends Model
             'web_searches' => 'integer',
             'search_log' => 'array',
             'context' => 'array',
+            'is_current' => 'boolean',
             'cost' => 'decimal:8',
             'ttft_ms' => 'integer',
             'client_ttft_ms' => 'integer',

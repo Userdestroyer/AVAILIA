@@ -22,6 +22,9 @@ class MessageResource extends JsonResource
         return [
             'id' => $this->id,
             'parent_id' => $this->parent_id,
+            // Варианты ответа одной модели (регенерация) группируются по ней; показывается текущий
+            'ai_model_id' => $isAnswer ? $this->ai_model_id : null,
+            'is_current' => $this->is_current ?? true,
             'role' => $this->role,
             'status' => $lost ? MessageStatus::Failed : $this->status,
             'content' => $this->content ?? '',

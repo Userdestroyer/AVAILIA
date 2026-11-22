@@ -93,36 +93,78 @@ class ChatStream
         }
 
         $conversation = $chat->messages()->where('id', '<=', $userMessage->id)->with('files')->orderBy('id')->get();
-        $redis = Redis::connection('gateway');
-        // Картриджи — системным сообщением в начале: одинаковое начало у всех моделей и ходов
-        $system = ContextPrompt::build($plates);
-        $preamble = $system ? collect([new Message(['role' => MessageRole::System, 'content' => $system])]) : collect();
-
-        $started = $answers->map(function (Message $answer) use ($offers, $conversation, $options, $redis, $preamble) {
-            $offer = $offers->firstWhere('ai_model_id', $answer->ai_model_id);
-            $provider = $this->providers->provider($offer->provider->slug);
-            $request = $provider->request($offer, $preamble->concat($this->historyFor($conversation, $offer->aiModel)), $options);
-
-            // Ключ провайдера сюда не кладём — он есть у гейтвея; кладём только тело запроса
-            $token = Str::random(48);
-            $redis->setex("stream:{$token}", config('ai.gateway.stream_ttl'), json_encode([
-                'provider' => $provider->name(),
-                'message_id' => $answer->id,
-                // Формат определяет, как гейтвей разбирает стрим; путь — куда слать (база — у гейтвея)
-                'format' => $request->format,
-                'path' => $request->path,
-                'body' => $request->body,
-            ]));
-
-            return ['message' => $answer, 'token' => $token];
-        });
+        $started = $answers->map(fn (Message $answer) => [
+            'message' => $answer,
+            'token' => $this->dispatch($answer, $offers->firstWhere('ai_model_id', $answer->ai_model_id), $conversation, $plates, $options),
+        ]);
 
         return ['chat' => $chat, 'userMessage' => $userMessage, 'answers' => $started->values()->all()];
     }
 
     /**
+     * Ещё один вариант ответа той же модели на тот же вопрос — с тем же контекстом, что ушёл с вопросом.
+     * Новый вариант становится текущим: его видно в чате и он идёт в историю дальше.
+     *
+     * @param  Collection<int, ContextPlate>  $plates  картриджи вопроса в тех версиях, что ушли с ним
+     * @return array{message: Message, token: string}
+     */
+    public function regenerate(Message $answer, ProviderModel $offer, ChatOptions $options, Collection $plates): array
+    {
+        $chat = $answer->chat;
+
+        $variant = DB::transaction(function () use ($chat, $answer, $offer) {
+            $chat->messages()->where('parent_id', $answer->parent_id)->where('ai_model_id', $answer->ai_model_id)->update(['is_current' => false]);
+            $chat->touch();
+
+            return $chat->messages()->create([
+                'parent_id' => $answer->parent_id,
+                'role' => MessageRole::Assistant,
+                'status' => MessageStatus::Pending,
+                'ai_model_id' => $offer->ai_model_id,
+                'provider_id' => $offer->provider_id,
+                'is_current' => true,
+            ]);
+        });
+
+        // Разговор до этого вопроса: прежние вопросы с их ответами (в т.ч. перегенерированными позже), без ответов на него
+        $conversation = $chat->messages()->with('files')->orderBy('id')->get()->filter(fn (Message $message) => $message->role === MessageRole::User
+            ? $message->id <= $answer->parent_id
+            : $message->parent_id < $answer->parent_id);
+
+        return ['message' => $variant, 'token' => $this->dispatch($variant, $offer, $conversation->values(), $plates, $options)];
+    }
+
+    /**
+     * Стрим-задание для гейтвея: тело запроса — в Redis под одноразовым токеном.
+     *
+     * @param  Collection<int, Message>  $conversation
+     * @param  Collection<int, ContextPlate>  $plates
+     */
+    private function dispatch(Message $answer, ProviderModel $offer, Collection $conversation, Collection $plates, ChatOptions $options): string
+    {
+        // Картриджи — системным сообщением в начале: одинаковое начало у всех моделей и ходов
+        $system = ContextPrompt::build($plates);
+        $preamble = $system ? collect([new Message(['role' => MessageRole::System, 'content' => $system])]) : collect();
+        $provider = $this->providers->provider($offer->provider->slug);
+        $request = $provider->request($offer, $preamble->concat($this->historyFor($conversation, $offer->aiModel)), $options);
+
+        // Ключ провайдера сюда не кладём — он есть у гейтвея; кладём только тело запроса
+        $token = Str::random(48);
+        Redis::connection('gateway')->setex("stream:{$token}", config('ai.gateway.stream_ttl'), json_encode([
+            'provider' => $provider->name(),
+            'message_id' => $answer->id,
+            // Формат определяет, как гейтвей разбирает стрим; путь — куда слать (база — у гейтвея)
+            'format' => $request->format,
+            'path' => $request->path,
+            'body' => $request->body,
+        ]));
+
+        return $token;
+    }
+
+    /**
      * История для конкретной модели: вопросы и по одному удавшемуся ответу на каждый —
-     * её собственный, а если в том ходе её не было — первый. Иначе модель увидела бы подряд
+     * её собственный (выбранный вариант, если их несколько), а если в том ходе её не было — первый. Иначе модель увидела бы подряд
      * несколько «своих» ответов от разных моделей.
      *
      * @param  Collection<int, Message>  $conversation
@@ -138,7 +180,8 @@ class ChatStream
         return $conversation
             ->where('role', MessageRole::User)
             ->flatMap(function (Message $question) use ($answers, $model) {
-                $turn = $answers->get($question->id);
+                // Выбранные варианты — первыми (сортировка устойчивая: дальше по порядку)
+                $turn = $answers->get($question->id)?->sortByDesc('is_current');
                 $answer = $turn?->firstWhere('ai_model_id', $model->id) ?? $turn?->first();
 
                 return array_filter([$question, $answer]);

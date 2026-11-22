@@ -30,6 +30,9 @@ Route::middleware('auth')->group(function () {
     Route::delete('/context/plates/{plate}', [ContextController::class, 'destroy'])->name('context.plates.destroy');
     Route::delete('/text/messages/{message}', [MessageController::class, 'destroy'])->name('text.messages.destroy');
     Route::post('/text/messages/{message}/metrics', [MessageController::class, 'metrics'])->name('text.messages.metrics');
+    Route::post('/text/messages/{message}/regenerate', [MessageController::class, 'regenerate'])->name('text.messages.regenerate');
+    Route::patch('/text/messages/{message}/current', [MessageController::class, 'select'])->name('text.messages.current');
+    Route::get('/text/messages/{message}/context', [MessageController::class, 'context'])->name('text.messages.context');
     // Режимы — пока заглушки; переключение без перезагрузки страницы (Inertia)
     Route::get('/files', [FileController::class, 'index'])->name('files.index');
     Route::post('/files', [FileController::class, 'store'])->name('files.store');

@@ -10,9 +10,15 @@ import { formatCost, formatEnergy } from '@/lib/format';
  */
 const props = defineProps({
     answers: { type: Array, required: true },
+    // Варианты ответа каждой модели: ai_model_id → [ответы]
+    variants: { type: Map, default: () => new Map() },
+    busy: { type: Boolean, default: false },
 });
 
-defineEmits(['delete']);
+defineEmits(['delete', 'select', 'regenerate']);
+
+// Карточка — место модели в ленте: листание вариантов меняет ответ, а не карточку
+const slot = (answer) => answer.ai_model_id ?? answer.id;
 
 const track = ref(null);
 const cards = ref([]);
@@ -84,7 +90,7 @@ onBeforeUnmount(() => {
         <div class="flex flex-wrap gap-1.5 px-[calc(6%+0.5rem)]">
             <button
                 v-for="(answer, index) in answers"
-                :key="answer.id"
+                :key="slot(answer)"
                 type="button"
                 class="flex items-center gap-1.5 rounded-full px-3 py-1 text-xs transition"
                 :class="index === active ? 'pill-active' : 'text-fg/55 hover:text-fg'"
@@ -106,13 +112,20 @@ onBeforeUnmount(() => {
         >
             <div
                 v-for="(answer, index) in answers"
-                :key="answer.id"
+                :key="slot(answer)"
                 ref="cards"
                 class="w-[88%] shrink-0 snap-center transition duration-300"
                 :class="index === active ? '' : 'cursor-pointer opacity-35 blur-[1.5px] saturate-50'"
                 @click="index !== active && go(index)"
             >
-                <AnswerCard :answer="answer" @delete="$emit('delete', $event)" />
+                <AnswerCard
+                    :answer="answer"
+                    :variants="variants.get(answer.ai_model_id)"
+                    :busy="busy"
+                    @delete="$emit('delete', $event)"
+                    @select="$emit('select', $event)"
+                    @regenerate="$emit('regenerate', $event)"
+                />
             </div>
         </div>
     </div>

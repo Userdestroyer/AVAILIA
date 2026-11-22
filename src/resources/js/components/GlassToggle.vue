@@ -9,7 +9,9 @@ const model = defineModel({ type: Boolean, default: false });
 </script>
 
 <template>
-    <label class="flex items-center gap-3 text-[15px]" :class="disabled ? 'cursor-default opacity-40' : 'cursor-pointer'">
+    <!-- relative: скрытый чекбокс (sr-only — absolute) стоит внутри переключателя, а не у дальнего предка;
+         иначе фокус по клику прокручивал страницу к тому предку -->
+    <label class="relative flex items-center gap-3 text-[15px]" :class="disabled ? 'cursor-default opacity-40' : 'cursor-pointer'">
         <component :is="icon" v-if="icon" class="size-5 text-fg/70" :stroke-width="1.5" />
         {{ label }}
         <input v-model="model" type="checkbox" class="peer sr-only" :disabled="disabled" />

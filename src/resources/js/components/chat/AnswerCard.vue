@@ -1,5 +1,6 @@
 <script setup>
-import { Check, Globe, LoaderCircle, Sparkle, X, Zap } from 'lucide-vue-next';
+import { Check, ChevronLeft, ChevronRight, Globe, LoaderCircle, Sparkle, X, Zap } from 'lucide-vue-next';
+import { computed } from 'vue';
 import MarkdownContent from '@/components/MarkdownContent.vue';
 import MessageActions from '@/components/chat/MessageActions.vue';
 import VendorIcon from '@/components/VendorIcon.vue';
@@ -7,20 +8,36 @@ import { formatCost, formatEnergy } from '@/lib/format';
 
 const props = defineProps({
     answer: { type: Object, required: true },
+    // Все варианты ответа этой модели на вопрос (регенерация), включая показанный
+    variants: { type: Array, default: () => [] },
+    // Идёт отправка или чей-то стрим — новый вариант не запросить
+    busy: { type: Boolean, default: false },
 });
 
-defineEmits(['delete']);
+const emit = defineEmits(['delete', 'select', 'regenerate']);
 
+// Совпадает с MessageController::MAX_REGENERATIONS: исходный ответ и до 5 перегенераций
+const MAX_VARIANTS = 6;
+
+const writing = (answer) => ['pending', 'streaming'].includes(answer.status);
 // Пока ответ пишется — удалить нельзя (гейтвей ещё отчитается по нему)
-const finished = () => !['pending', 'streaming'].includes(props.answer.status) && Number.isInteger(props.answer.id);
+const finished = () => !writing(props.answer) && Number.isInteger(props.answer.id);
+
+// ‹ 2/3 › — листать варианты; «вправо» на последнем — запросить ещё один
+const list = computed(() => (props.variants.length ? props.variants : [props.answer]));
+const index = computed(() => Math.max(0, list.value.findIndex((v) => v.id === props.answer.id)));
+const isLast = computed(() => index.value === list.value.length - 1);
+const canRegenerate = computed(() => finished() && !props.busy && list.value.length < MAX_VARIANTS && !list.value.some(writing));
+const next = () => (isLast.value ? canRegenerate.value && emit('regenerate', props.answer) : emit('select', list.value[index.value + 1]));
+const nextTitle = computed(() => {
+    if (!isLast.value) return 'Следующий вариант';
+    if (list.value.length >= MAX_VARIANTS) return 'Больше вариантов не получить';
+    return 'Ещё вариант ответа';
+});
 </script>
 
 <template>
     <div class="answer-frame space-y-2 px-2.5 py-2.5 md:px-4 md:py-3">
-        <div v-if="answer.model" class="flex items-center gap-2 text-xs text-fg/50">
-            <VendorIcon :slug="answer.model.vendor" />
-            {{ answer.model.name }}
-        </div>
         <!-- Поиски модели: строчка на каждый запрос со статусом -->
         <ul v-if="answer.searches?.length" class="space-y-1">
             <li
@@ -42,8 +59,34 @@ const finished = () => !['pending', 'streaming'].includes(props.answer.status) &
             Думаю…
         </div>
         <p v-if="answer.status === 'failed'" class="text-sm text-hot-soft">{{ answer.error || 'Модель не ответила' }}</p>
-        <div v-if="finished() || answer.cost" class="-mb-1 flex items-center justify-between gap-2">
-            <MessageActions v-if="finished()" :text="answer.content" @delete="$emit('delete', answer)" />
+        <!-- Низ ответа: действия, варианты, модель и цена -->
+        <div class="-mb-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+            <MessageActions v-if="finished()" :text="answer.content" @delete="emit('delete', answer)" />
+            <div v-if="finished() || list.length > 1" class="flex items-center text-fg/55">
+                <button
+                    type="button"
+                    class="vein rounded-lg p-1 transition hover:text-fg disabled:opacity-30"
+                    title="Предыдущий вариант"
+                    :disabled="index === 0"
+                    @click="emit('select', list[index - 1])"
+                >
+                    <ChevronLeft class="size-4" :stroke-width="1.5" />
+                </button>
+                <span v-if="list.length > 1" class="min-w-7 text-center text-xs tabular-nums">{{ index + 1 }}/{{ list.length }}</span>
+                <button
+                    type="button"
+                    class="vein rounded-lg p-1 transition hover:text-fg disabled:opacity-30"
+                    :title="nextTitle"
+                    :disabled="isLast && !canRegenerate"
+                    @click="next"
+                >
+                    <ChevronRight class="size-4" :stroke-width="1.5" />
+                </button>
+            </div>
+            <span v-if="answer.model" class="flex min-w-0 items-center gap-1.5 text-xs text-fg/45">
+                <VendorIcon :slug="answer.model.vendor" />
+                <span class="truncate">{{ answer.model.name }}</span>
+            </span>
             <span
                 v-if="answer.energy !== null && answer.energy !== undefined"
                 class="ml-auto flex items-center gap-0.5 text-xs text-fg/55 tabular-nums"

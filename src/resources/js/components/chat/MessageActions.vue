@@ -44,6 +44,8 @@ onBeforeUnmount(() => clearTimeout(timer));
 
 <template>
     <div class="flex items-center gap-0.5">
+        <!-- Свои действия сообщения — перед общими -->
+        <slot />
         <button
             type="button"
             class="vein rounded-lg p-1.5 transition hover:text-fg"
