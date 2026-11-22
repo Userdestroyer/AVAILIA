@@ -1,19 +1,21 @@
 <script setup>
 import { Head, router, usePage } from '@inertiajs/vue3';
 import {
-    ArrowUp, Brain, Disc3, Globe, Hash, Info, MessageSquare, Paperclip, Plus, RotateCcw, SlidersHorizontal, Users, X, Zap,
+    ArrowUp, Brain, Disc3, FileText, Globe, Hash, Info, Loader2, MessageSquare, Paperclip, Plus, RotateCcw, SlidersHorizontal, Users, X, Zap,
 } from 'lucide-vue-next';
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, toRef, watch, watchEffect } from 'vue';
+import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, toRef, watch, watchEffect } from 'vue';
 import AppLayout from '@/layouts/AppLayout.vue';
 import AnswerCard from '@/components/chat/AnswerCard.vue';
 import AnswerCarousel from '@/components/chat/AnswerCarousel.vue';
 import MessageActions from '@/components/chat/MessageActions.vue';
+import MessageFiles from '@/components/chat/MessageFiles.vue';
 import GlassToggle from '@/components/GlassToggle.vue';
 import ModelPicker from '@/components/ModelPicker.vue';
 import ModeShell from '@/components/ModeShell.vue';
 import EmptyHero from '@/components/chat/EmptyHero.vue';
 import UsageRing from '@/components/chat/UsageRing.vue';
 import VendorIcon from '@/components/VendorIcon.vue';
+import { loadLibrary, useAttachments } from '@/composables/useAttachments';
 import { fuzzy, useComposerMenu } from '@/composables/useComposerMenu';
 import { useChatPreferences } from '@/composables/useChatPreferences';
 import { useMediaQuery } from '@/composables/useMediaQuery';
@@ -28,6 +30,8 @@ const props = defineProps({
     plates: { type: Array, default: () => [] },
     chat: { type: Object, default: null },
     messages: { type: Array, default: () => [] },
+    // Лимиты вложений: размер одного файла (больше — браузер ужмёт картинку) и сколько к вопросу
+    fileLimits: { type: Object, default: () => ({ max_bytes: 4 * 1024 * 1024, per_message: 10 }) },
 });
 
 const thinking = useThinking();
@@ -284,10 +288,66 @@ const attachedTokens = computed(() => attached.value.reduce((sum, p) => sum + p.
 const attachPlates = (ids) => (attachedPlates.value = [...new Set([...attachedPlates.value, ...ids])]);
 const detachPlate = (id) => (attachedPlates.value = attachedPlates.value.filter((p) => p !== id));
 
+// ── Файлы к вопросу ────────────────────────────────────
+// Окно файлового поля — отдельным чанком, по первому нажатию на скрепку; галерея грузится уже на наведение
+const FilePicker = defineAsyncComponent(() => import('@/components/chat/FilePicker.vue'));
+const pickerOpen = ref(false);
+const pickerUsed = ref(false);
+watch(pickerOpen, (open) => open && (pickerUsed.value = true));
+
+const attachments = useAttachments(props.fileLimits, (text) => (error.value = text));
+const { items: fileItems, ids: fileIds, uploading: filesUploading } = attachments;
+const attachedFileIds = computed(() => fileItems.value.filter((i) => i.file).map((i) => i.file.id));
+
+// Перетащили файл в окно — сразу загружаем; подложка-подсказка, пока файл над окном
+const dragging = ref(false);
+let dragDepth = 0;
+const carriesFiles = (event) => event.dataTransfer?.types?.includes('Files');
+const onDragEnter = (event) => {
+    if (!carriesFiles(event)) return;
+    event.preventDefault();
+    dragDepth++;
+    dragging.value = true;
+};
+const onDragOver = (event) => carriesFiles(event) && event.preventDefault();
+const onDragLeave = (event) => {
+    if (!carriesFiles(event)) return;
+    dragDepth = Math.max(0, dragDepth - 1);
+    dragging.value = dragDepth > 0;
+};
+const onDrop = (event) => {
+    if (!carriesFiles(event)) return;
+    event.preventDefault();
+    dragDepth = 0;
+    dragging.value = false;
+    attachments.add(event.dataTransfer.files);
+};
+const DRAG_EVENTS = { dragenter: onDragEnter, dragover: onDragOver, dragleave: onDragLeave, drop: onDrop };
+onMounted(() => Object.entries(DRAG_EVENTS).forEach(([name, handler]) => window.addEventListener(name, handler)));
+onBeforeUnmount(() => Object.entries(DRAG_EVENTS).forEach(([name, handler]) => window.removeEventListener(name, handler)));
+
+// Скриншот из буфера (Ctrl+V) — тоже сразу в загрузку
+const onPaste = (event) => {
+    const files = [...(event.clipboardData?.files ?? [])];
+    if (!files.length) return;
+    event.preventDefault();
+    attachments.add(files);
+};
+
 // @модель в сообщении: этот вопрос — именно ей (несколько — мульти-запрос), выбор в панели не меняется
 const mentioned = ref([]);
 const mentionedModels = computed(() => mentioned.value.map((id) => allModels.value.find((m) => m.id === id)).filter(Boolean));
 const sendTargets = computed(() => (mentioned.value.length ? mentioned.value : targetModels.value));
+
+// Кто из адресатов не увидит приложенное: вместо файла модель получит пометку
+const filesHint = computed(() => {
+    const kinds = new Set(fileItems.value.map((i) => i.kind));
+    const blind = sendTargets.value
+        .map((id) => allModels.value.find((m) => m.id === id))
+        .filter((m) => m && ((kinds.has('image') && !m.capabilities?.images) || (kinds.has('document') && !m.capabilities?.files)));
+    if (!blind.length) return null;
+    return `${blind.map((m) => m.name).join(', ')} — ${blind.length === 1 ? 'не видит такие файлы, получит' : 'не видят такие файлы, получат'} пометку`;
+});
 
 const menu = useComposerMenu(textarea, message, {
     '@': (query) => allModels.value
@@ -351,7 +411,8 @@ let localSeq = 0;
 
 const send = async () => {
     const content = message.value.trim();
-    if (!content || busy.value) return;
+    const sentFileIds = fileIds.value;
+    if ((!content && !sentFileIds.length) || busy.value || filesUploading.value) return;
     if (exhausted.value) {
         error.value = exhausted.value;
         return;
@@ -369,8 +430,12 @@ const send = async () => {
         content,
         // Пластинки над вопросом — сразу, не дожидаясь сервера
         context: attached.value.map((p) => ({ plate_id: p.id, title: p.title })),
+        // Файлы над вопросом — сразу, со своими превью из памяти
+        files: attachments.present(),
     });
     const local = messages.value.length - 1;
+    const localFiles = messages.value[local].files;
+    const takenFiles = attachments.take();
     message.value = '';
     scrollToBottom();
 
@@ -381,6 +446,7 @@ const send = async () => {
             ai_model_ids: sendTargets.value,
             content,
             plate_ids: attachedPlates.value,
+            file_ids: sentFileIds,
             max_tokens: maxTokens.value,
             reasoning_effort: deepThinking.value ? effort.value : null,
             temperature: temperatureModels.value.length ? temperature.value : null,
@@ -391,6 +457,7 @@ const send = async () => {
     } catch (e) {
         messages.value.splice(local, 1);
         message.value = content;
+        attachments.restore(takenFiles);
         error.value = e.message;
         // Отказ мог быть из-за лимита — кольцо энергии должно показать актуальное
         router.reload({ only: ['usage'] });
@@ -399,7 +466,11 @@ const send = async () => {
         sending.value = false;
     }
 
-    messages.value[local] = started.user_message;
+    // Превью из памяти остаются — картинка не перегружается с сервера и не мигает
+    messages.value[local] = {
+        ...started.user_message,
+        files: started.user_message.files.map((file) => localFiles.find((own) => own.id === file.id) ?? file),
+    };
     mentioned.value = [];
     if (!chatId.value) {
         chatId.value = started.chat.id;
@@ -542,7 +613,11 @@ const onKeydown = (event) => {
                                 {{ item.title }}
                             </span>
                         </div>
-                        <div class="max-w-[85%] rounded-2xl rounded-br-md bg-(--bubble-bg) px-3 py-2 text-[0.875rem] leading-relaxed whitespace-pre-wrap md:px-4 md:py-2.5 md:text-[16px]">
+                        <MessageFiles v-if="turn.question.files?.length" class="mb-0.5" :files="turn.question.files" />
+                        <div
+                            v-if="turn.question.content"
+                            class="max-w-[85%] rounded-2xl rounded-br-md bg-(--bubble-bg) px-3 py-2 text-[0.875rem] leading-relaxed whitespace-pre-wrap md:px-4 md:py-2.5 md:text-[16px]"
+                        >
                             {{ turn.question.content }}
                         </div>
                         <!-- На телефоне видны всегда, на десктопе — при наведении -->
@@ -590,7 +665,30 @@ const onKeydown = (event) => {
 
             <form v-frost class="glass flex flex-col rounded-[22px] px-2 py-1.5 md:rounded-[28px] md:px-4 md:py-3" @submit.prevent="send">
                 <!-- Что уйдёт с вопросом: призванные модели и пластинки картриджей (крутятся, пока модель отвечает) -->
-                <div v-if="mentionedModels.length || attached.length" class="flex flex-wrap items-center gap-1 px-1 pb-1">
+                <div v-if="mentionedModels.length || attached.length || fileItems.length" class="flex flex-wrap items-center gap-1 px-1 pb-1">
+                    <!-- Файлы: превью сразу, пока сжимаются и грузятся -->
+                    <template v-for="f in fileItems" :key="f.key">
+                        <span v-if="f.kind === 'image'" class="relative size-10 shrink-0 overflow-hidden rounded-lg border border-fg/20" :title="f.name">
+                            <img
+                                :src="f.preview ?? f.file?.thumb_url ?? f.file?.url"
+                                alt=""
+                                class="size-full object-cover transition"
+                                :class="{ 'opacity-50': f.status === 'uploading' }"
+                            />
+                            <Loader2 v-if="f.status === 'uploading'" class="absolute inset-0 m-auto size-4 animate-spin text-white" :stroke-width="2" />
+                            <button type="button" class="absolute top-0.5 right-0.5 rounded-full bg-black/45 p-0.5 text-white" title="Убрать" @click="attachments.remove(f.key)">
+                                <X class="size-2.5" :stroke-width="2.5" />
+                            </button>
+                        </span>
+                        <span v-else class="glass-inset flex items-center gap-1 rounded-full py-0.5 pr-0.5 pl-1.5 text-xs text-fg/75" :title="f.name">
+                            <Loader2 v-if="f.status === 'uploading'" class="size-3.5 animate-spin text-cool-soft" :stroke-width="1.5" />
+                            <FileText v-else class="size-3.5 text-cool-soft" :stroke-width="1.5" />
+                            <span class="max-w-40 truncate">{{ f.name }}</span>
+                            <button type="button" class="rounded-full p-0.5 text-fg/40 hover:text-fg" title="Убрать" @click="attachments.remove(f.key)">
+                                <X class="size-3" :stroke-width="2" />
+                            </button>
+                        </span>
+                    </template>
                     <span
                         v-for="m in mentionedModels"
                         :key="`m${m.id}`"
@@ -618,8 +716,17 @@ const onKeydown = (event) => {
                     </span>
                 </div>
 
+                <p v-if="filesHint" class="px-2 pb-1 text-[11px] text-fg/45">{{ filesHint }}</p>
+
                 <div class="flex items-end gap-1 md:gap-2">
-                    <button type="button" class="vein p-1.5 md:p-2" title="Прикрепить файл (скоро)" disabled>
+                    <button
+                        type="button"
+                        class="vein p-1.5 hover:text-fg md:p-2"
+                        title="Прикрепить файл — картинку или PDF"
+                        @pointerenter="loadLibrary()"
+                        @focus="loadLibrary()"
+                        @click="pickerOpen = true"
+                    >
                         <Paperclip class="size-[18px] md:size-5" :stroke-width="1.5" />
                     </button>
                     <button v-if="plates.length" type="button" class="vein p-1.5 hover:text-fg md:p-2" title="Подключить контекст (#)" @click="insertTrigger('#')">
@@ -637,19 +744,35 @@ const onKeydown = (event) => {
                         @click="menu.detect()"
                         @keyup="['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes($event.key) && menu.detect()"
                         @blur="menu.close()"
+                        @paste="onPaste"
                     />
                     <UsageRing :usage="usage" :rate="page.props.energyRate" />
                     <button
                         type="submit"
-                        :disabled="!message.trim() || busy || !!exhausted"
+                        :disabled="(!message.trim() && !fileIds.length) || busy || !!exhausted || filesUploading"
                         class="flex size-9 shrink-0 items-center justify-center rounded-full pill-active transition disabled:opacity-40 md:size-11"
-                        title="Отправить"
+                        :title="filesUploading ? 'Файл ещё загружается' : 'Отправить'"
                     >
                         <ArrowUp class="size-5" :stroke-width="2" />
                     </button>
                 </div>
             </form>
         </div>
+
+        <FilePicker v-if="pickerUsed" v-model:open="pickerOpen" :attached-ids="attachedFileIds" @toggle="attachments.toggle" @upload="attachments.add" />
+
+        <!-- Файл над окном: отпустите — прикрепится -->
+        <Teleport to="body">
+            <Transition enter-active-class="transition duration-150" enter-from-class="opacity-0" leave-active-class="transition duration-150" leave-to-class="opacity-0">
+                <div v-if="dragging" class="pointer-events-none fixed inset-0 z-[60] flex items-center justify-center bg-black/20 p-4 backdrop-blur-[2px]">
+                    <div class="glass rounded-3xl border-2 border-dashed px-8 py-6 text-center">
+                        <Paperclip class="mx-auto mb-2 size-7 text-cool-soft" :stroke-width="1.5" />
+                        <p class="text-sm md:text-base">Отпустите — файл прикрепится к вопросу</p>
+                        <p class="mt-1 text-xs text-fg/50">Картинки и PDF</p>
+                    </div>
+                </div>
+            </Transition>
+        </Teleport>
 
         <!-- Вторая половина пустого экрана — поле ввода стоит ровно по центру; тут же подсказка -->
         <div v-if="isEmpty" class="flex min-h-0 flex-1 flex-col items-center px-4 pt-3 text-center">

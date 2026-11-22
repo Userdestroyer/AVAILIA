@@ -33,7 +33,8 @@ class StoreMessageRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'content' => ['required', 'string', 'max:20000'],
+            // Скриншот можно отправить и без подписи
+            'content' => ['nullable', 'required_without:file_ids', 'string', 'max:20000'],
             'chat_id' => ['nullable', 'uuid'],
             // Мульти-запрос: одна и та же реплика уходит сразу нескольким моделям
             'ai_model_ids' => ['required', 'array', 'min:1', 'max:'.self::MAX_MODELS],
@@ -53,6 +54,9 @@ class StoreMessageRequest extends FormRequest
             // Картриджи контекста; чужие id просто не найдутся — выборка идёт по владельцу
             'plate_ids' => ['nullable', 'array', 'max:30'],
             'plate_ids.*' => ['integer'],
+            // Файлы из файлового поля; чужие не найдутся — выборка по владельцу
+            'file_ids' => ['nullable', 'array', 'max:'.config('files.per_message')],
+            'file_ids.*' => ['uuid', 'distinct'],
         ];
     }
 }

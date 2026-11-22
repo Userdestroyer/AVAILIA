@@ -77,6 +77,14 @@ class User extends Authenticatable
         return $this->hasMany(ContextPlate::class);
     }
 
+    /**
+     * Файловое поле: загруженное и сгенерированное.
+     */
+    public function files(): HasMany
+    {
+        return $this->hasMany(UserFile::class);
+    }
+
     public function tags(): HasMany
     {
         return $this->hasMany(Tag::class);

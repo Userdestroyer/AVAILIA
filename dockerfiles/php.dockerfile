@@ -24,11 +24,11 @@ RUN sed -i "s/user = www-data/user = laravel/g" /usr/local/etc/php-fpm.d/www.con
 # Рантайм-библиотеки остаются в образе, build-зависимости удаляются после сборки.
 # OPcache в PHP 8.5 встроен всегда — ставить отдельно не нужно.
 RUN apk add --no-cache \
-    git unzip libpq icu-libs libzip libpng libjpeg-turbo freetype \
+    git unzip libpq icu-libs libzip libpng libjpeg-turbo libwebp freetype \
  && apk add --no-cache --virtual .build-deps \
     $PHPIZE_DEPS linux-headers postgresql-dev icu-dev libzip-dev \
-    libpng-dev libjpeg-turbo-dev freetype-dev \
- && docker-php-ext-configure gd --with-freetype --with-jpeg \
+    libpng-dev libjpeg-turbo-dev libwebp-dev freetype-dev \
+ && docker-php-ext-configure gd --with-freetype --with-jpeg --with-webp \
  && docker-php-ext-install -j$(nproc) gd pdo_pgsql pgsql intl zip bcmath pcntl exif \
  && curl -fsSL https://github.com/phpredis/phpredis/archive/refs/tags/6.3.0.tar.gz \
     | tar -xz -C /tmp \

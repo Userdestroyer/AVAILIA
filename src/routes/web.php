@@ -4,6 +4,7 @@ use App\Http\Controllers\Admin\AdminController;
 use App\Http\Controllers\Admin\LimitsController;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\ContextController;
+use App\Http\Controllers\FileController;
 use App\Http\Controllers\MessageController;
 use App\Http\Controllers\SettingsController;
 use App\Http\Controllers\TextController;
@@ -30,6 +31,11 @@ Route::middleware('auth')->group(function () {
     Route::delete('/text/messages/{message}', [MessageController::class, 'destroy'])->name('text.messages.destroy');
     Route::post('/text/messages/{message}/metrics', [MessageController::class, 'metrics'])->name('text.messages.metrics');
     // Режимы — пока заглушки; переключение без перезагрузки страницы (Inertia)
+    Route::get('/files', [FileController::class, 'index'])->name('files.index');
+    Route::post('/files', [FileController::class, 'store'])->name('files.store');
+    Route::get('/files/{file}', [FileController::class, 'show'])->whereUuid('file')->name('files.show');
+    Route::get('/files/{file}/thumb', [FileController::class, 'thumb'])->whereUuid('file')->name('files.thumb');
+
     Route::inertia('/images', 'Mode/Placeholder', ['mode' => 'images'])->name('images');
     Route::inertia('/video', 'Mode/Placeholder', ['mode' => 'video'])->name('video');
     Route::inertia('/audio', 'Mode/Placeholder', ['mode' => 'audio'])->name('audio');

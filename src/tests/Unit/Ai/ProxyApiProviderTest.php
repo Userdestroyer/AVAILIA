@@ -9,6 +9,7 @@ use App\Models\AiModel;
 use App\Models\Message;
 use App\Models\ProviderModel;
 use App\Models\ProviderModelCapability;
+use App\Models\UserFile;
 use App\Models\Vendor;
 use App\Services\Ai\Data\ChatOptions;
 use App\Services\Ai\ProxyApiProvider;
@@ -144,6 +145,66 @@ class ProxyApiProviderTest extends TestCase
     /**
      * @param  array<string, array<string, mixed>|null>  $capabilities  capability => settings
      */
+    public static function attachmentRequests(): array
+    {
+        $files = ['images' => null, 'files' => null];
+        $search = ['web_search' => null];
+
+        return [
+            'chat (Grok)' => ['xai', false, $files, [
+                ['type' => 'image_url', 'image_url' => ['url' => 'data:image/png;base64,UE5H']],
+                ['type' => 'file', 'file' => ['filename' => 'b.pdf', 'file_data' => 'data:application/pdf;base64,UERG']],
+                ['type' => 'text', 'text' => 'Что тут?'],
+            ]],
+            'Messages (Claude с поиском)' => ['anthropic', true, [...$files, ...$search], [
+                ['type' => 'image', 'source' => ['type' => 'base64', 'media_type' => 'image/png', 'data' => 'UE5H']],
+                ['type' => 'document', 'source' => ['type' => 'base64', 'media_type' => 'application/pdf', 'data' => 'UERG']],
+                ['type' => 'text', 'text' => 'Что тут?'],
+            ]],
+            'Responses (GPT с поиском)' => ['openai', true, [...$files, 'web_search' => ['max_uses' => false, 'domains' => true]], [
+                ['type' => 'input_image', 'image_url' => 'data:image/png;base64,UE5H'],
+                ['type' => 'input_file', 'filename' => 'b.pdf', 'file_data' => 'data:application/pdf;base64,UERG'],
+                ['type' => 'input_text', 'text' => 'Что тут?'],
+            ]],
+            // Модель без картинок и файлов знает, что они были, но не получает их
+            'модель не принимает файлы' => ['xai', false, [], [
+                ['type' => 'text', 'text' => "Что тут?\n\n[Приложена картинка «a.png» — эта модель не принимает такие файлы]\n\n[Приложен документ «b.pdf» — эта модель не принимает такие файлы]"],
+            ]],
+        ];
+    }
+
+    #[Group('U1')]
+    #[DataProvider('attachmentRequests')]
+    #[TestDox('Файлы вопроса уходят в формате API запроса; модели, которая их не принимает, — пометкой вместо файла')]
+    public function test_attachments_are_adapted_to_request_format(string $vendor, bool $search, array $capabilities, array $expected): void
+    {
+        // Содержимое — без диска: base64 подставляется напрямую
+        $file = function (string $name, string $mime, string $data) {
+            $file = new class extends UserFile
+            {
+                public string $data = '';
+
+                public function base64(): string
+                {
+                    return $this->data;
+                }
+            };
+            $file->forceFill(['name' => $name, 'mime' => $mime])->data = $data;
+
+            return $file;
+        };
+        $question = (new Message(['role' => MessageRole::User, 'content' => 'Что тут?']))
+            ->setRelation('files', collect([$file('a.png', 'image/png', 'UE5H'), $file('b.pdf', 'application/pdf', 'UERG')]));
+
+        $body = $this->provider()->request(
+            $this->offer($vendor, 'vendor/model', $capabilities),
+            [new Message(['role' => MessageRole::System, 'content' => 'Контекст']), $question],
+            new ChatOptions(webSearch: $search),
+        )->body;
+
+        $this->assertSame($expected, collect($body['messages'] ?? $body['input'])->last()['content']);
+    }
+
     private function offer(string $vendor, string $externalId, array $capabilities = []): ProviderModel
     {
         $model = (new AiModel(['slug' => 'model']))->setRelation('vendor', new Vendor(['slug' => $vendor]));

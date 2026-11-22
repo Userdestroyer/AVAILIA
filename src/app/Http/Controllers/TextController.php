@@ -47,7 +47,7 @@ class TextController extends Controller
 
     private function render(?Chat $chat = null): Response
     {
-        $messages = $chat?->messages()->with(['aiModel.vendor', 'chat.user'])->orderBy('id')->get();
+        $messages = $chat?->messages()->with(['aiModel.vendor', 'chat.user', 'files'])->orderBy('id')->get();
         // Картриджи, подключённые к последнему вопросу, — чтобы продолжить чат с тем же контекстом
         $lastContext = $messages?->where('role', MessageRole::User)->last()?->context;
 
@@ -61,6 +61,8 @@ class TextController extends Controller
                 'plate_ids' => $lastContext ? array_column($lastContext, 'plate_id') : [],
             ] : null,
             'messages' => $messages ? MessageResource::collection($messages)->resolve() : [],
+            // Браузер жмёт картинку, только если она не влезает в лимит
+            'fileLimits' => ['max_bytes' => config('files.max_kb') * 1024, 'per_message' => config('files.per_message')],
         ]);
     }
 

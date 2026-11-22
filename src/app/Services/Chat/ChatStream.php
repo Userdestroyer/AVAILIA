@@ -12,6 +12,7 @@ use App\Models\ContextPlate;
 use App\Models\Message;
 use App\Models\ProviderModel;
 use App\Models\User;
+use App\Models\UserFile;
 use App\Services\Ai\Data\ChatOptions;
 use App\Services\Ai\Data\ChatRequest;
 use App\Services\Ai\Data\Usage;
@@ -38,21 +39,25 @@ class ChatStream
     /**
      * @param  Collection<int, ProviderModel>  $offers  предложения моделей у провайдера, в порядке выбора юзера
      * @param  Collection<int, ContextPlate>  $plates  подключённые картриджи — уже только свои (отобраны по владельцу)
+     * @param  Collection<int, UserFile>  $files  приложенные файлы — уже только свои, в порядке прикрепления
      * @return array{chat: Chat, userMessage: Message, answers: list<array{message: Message, token: string}>}
      */
-    public function start(User $user, ?Chat $chat, Collection $offers, string $content, ChatOptions $options, ?Collection $plates = null): array
+    public function start(User $user, ?Chat $chat, Collection $offers, string $content, ChatOptions $options, ?Collection $plates = null, ?Collection $files = null): array
     {
         $isNew = $chat === null;
         $plates ??= collect();
+        $files ??= collect();
+        // Вопрос без подписи (только файлы) — назовём чат по ним
+        $topic = $content !== '' ? $content : $files->pluck('name')->join(', ');
 
-        [$chat, $userMessage, $answers] = DB::transaction(function () use ($user, $chat, $offers, $content, $plates) {
+        [$chat, $userMessage, $answers] = DB::transaction(function () use ($user, $chat, $offers, $content, $plates, $files, $topic) {
             $primary = $offers->first()->aiModel;
 
             if ($chat) {
                 $chat->update(['ai_model_id' => $primary->id]);
                 $chat->touch();
             } else {
-                $chat = $user->chats()->create(['ai_model_id' => $primary->id, 'title' => GenerateChatTitle::fallback($content)]);
+                $chat = $user->chats()->create(['ai_model_id' => $primary->id, 'title' => GenerateChatTitle::fallback($topic)]);
             }
 
             $userMessage = $chat->messages()->create([
@@ -65,6 +70,11 @@ class ChatStream
                     'title' => $plate->title,
                 ])->values()->all(),
             ]);
+
+            if ($files->isNotEmpty()) {
+                $userMessage->files()->attach($files->values()->mapWithKeys(fn (UserFile $file, int $sort) => [$file->id => ['sort' => $sort]])->all());
+            }
+            $userMessage->setRelation('files', $files->values());
 
             $answers = $offers->map(fn (ProviderModel $offer) => $chat->messages()->create([
                 'parent_id' => $userMessage->id,
@@ -79,10 +89,10 @@ class ChatStream
 
         // Название — фоном, параллельно ответу: постановка в очередь — это одна запись в Redis
         if ($isNew) {
-            GenerateChatTitle::dispatch($chat->id, $content);
+            GenerateChatTitle::dispatch($chat->id, $topic);
         }
 
-        $conversation = $chat->messages()->where('id', '<=', $userMessage->id)->orderBy('id')->get();
+        $conversation = $chat->messages()->where('id', '<=', $userMessage->id)->with('files')->orderBy('id')->get();
         $redis = Redis::connection('gateway');
         // Картриджи — системным сообщением в начале: одинаковое начало у всех моделей и ходов
         $system = ContextPrompt::build($plates);

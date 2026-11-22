@@ -24,17 +24,23 @@ export function deleteJson(url) {
     return requestJson('DELETE', url);
 }
 
+// Файлы — multipart: Content-Type с границей частей браузер ставит сам
+export function postForm(url, formData) {
+    return requestJson('POST', url, formData);
+}
+
 async function requestJson(method, url, body) {
+    const isForm = body instanceof FormData;
     const response = await fetch(url, {
         method,
         credentials: 'same-origin',
         headers: {
-            'Content-Type': 'application/json',
+            ...(isForm ? {} : { 'Content-Type': 'application/json' }),
             Accept: 'application/json',
             'X-Requested-With': 'XMLHttpRequest',
             'X-XSRF-TOKEN': xsrfToken(),
         },
-        body: body === undefined ? undefined : JSON.stringify(body),
+        body: body === undefined || isForm ? body : JSON.stringify(body),
     });
 
     // 204 No Content — тела нет

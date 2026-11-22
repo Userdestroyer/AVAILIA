@@ -24,7 +24,21 @@ return [
         'polza' => [
             'url' => env('POLZA_API_URL', 'https://polza.ai/api/v1'),
             'key' => env('POLZA_API_KEY'),
+            // Поиск polza:web_search, ₽ за один — для оценки, если Polza не сообщила стоимость сама
+            'web_search_price' => 0.5,
         ],
+    ],
+
+    // Импорт новых моделей из каталога Polza (artisan models:import): префикс id у Polza → наш вендор,
+    // в порядке приоритета; у каждого берутся самые свежие per_vendor моделей, недостающие добавляются скрытыми
+    'import' => [
+        'vendors' => [
+            'google' => 'google',
+            'anthropic' => 'anthropic',
+            'x-ai' => 'xai',
+            'openai' => 'openai',
+        ],
+        'per_vendor' => 10,
     ],
 
 ];

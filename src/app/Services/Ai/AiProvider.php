@@ -6,6 +6,7 @@ use App\Enums\Capability;
 use App\Enums\MessageRole;
 use App\Models\ProviderModel;
 use App\Models\Message;
+use App\Models\UserFile;
 use App\Services\Ai\Data\ChatOptions;
 use App\Services\Ai\Data\ChatRequest;
 use App\Services\Ai\Data\Completion;
@@ -97,7 +98,7 @@ abstract class AiProvider
     {
         $body = array_filter([
             'model' => $this->modelId($offer),
-            'messages' => $this->formatMessages($messages),
+            'messages' => $this->formatMessages($messages, $offer),
             'max_tokens' => $this->maxTokens($offer, $options),
             'temperature' => $this->temperature($offer, $options),
             'reasoning_effort' => $this->reasoningEffort($offer, $options),
@@ -135,7 +136,7 @@ abstract class AiProvider
             'model' => $this->modelId($offer),
             // Системный промпт в Responses — отдельным полем
             'instructions' => $system,
-            'input' => $this->formatMessages($messages),
+            'input' => $this->formatMessages($messages, $offer, ChatRequest::FORMAT_RESPONSES),
             'max_output_tokens' => $this->maxTokens($offer, $options),
             'temperature' => $this->temperature($offer, $options),
             'reasoning' => ($effort = $this->reasoningEffort($offer, $options)) ? ['effort' => $effort] : null,
@@ -182,7 +183,7 @@ abstract class AiProvider
             'thinking' => $effort ? ['type' => 'adaptive'] : null,
             'output_config' => $effort ? ['effort' => $effort] : null,
             'temperature' => $effort ? null : $this->temperature($offer, $options),
-            'messages' => $this->formatMessages($messages),
+            'messages' => $this->formatMessages($messages, $offer, ChatRequest::FORMAT_MESSAGES),
             'stream' => $stream ?: null,
             'tools' => [$tool],
         ], fn ($value) => $value !== null);
@@ -322,17 +323,65 @@ abstract class AiProvider
     }
 
     /**
+     * Сообщения в формате API. Вопрос с файлами — частями (переходник под формат), остальное — строкой.
+     *
      * @param  iterable<Message>  $messages
-     * @return list<array{role: string, content: string}>
+     * @return list<array{role: string, content: string|list<array<string, mixed>>}>
      */
-    protected function formatMessages(iterable $messages): array
+    protected function formatMessages(iterable $messages, ProviderModel $offer, string $format = ChatRequest::FORMAT_CHAT): array
     {
         $formatted = [];
 
         foreach ($messages as $message) {
-            $formatted[] = ['role' => $message->role->value, 'content' => (string) $message->content];
+            $files = $message->relationLoaded('files') ? $message->files : collect();
+            $formatted[] = [
+                'role' => $message->role->value,
+                'content' => $files->isEmpty() ? (string) $message->content : $this->contentParts($message, $files, $offer, $format),
+            ];
         }
 
         return $formatted;
+    }
+
+    /**
+     * Файлы — в формате API, текст — последним (Anthropic советует картинки перед вопросом).
+     * Файл, который модель не принимает, заменяется пометкой: она хотя бы знает, что он был.
+     *
+     * @param  iterable<UserFile>  $files
+     * @return list<array<string, mixed>>
+     */
+    protected function contentParts(Message $message, iterable $files, ProviderModel $offer, string $format): array
+    {
+        $text = (string) $message->content;
+        $parts = [];
+
+        foreach ($files as $file) {
+            $image = $file->isImage();
+            if (! $offer->supports($image ? Capability::Images : Capability::Files)) {
+                $text .= "\n\n[".($image ? 'Приложена картинка' : 'Приложен документ')." «{$file->name}» — эта модель не принимает такие файлы]";
+
+                continue;
+            }
+
+            $parts[] = match ($format) {
+                ChatRequest::FORMAT_MESSAGES => [
+                    'type' => $image ? 'image' : 'document',
+                    'source' => ['type' => 'base64', 'media_type' => $file->mime, 'data' => $file->base64()],
+                ],
+                ChatRequest::FORMAT_RESPONSES => $image
+                    ? ['type' => 'input_image', 'image_url' => $file->dataUri()]
+                    : ['type' => 'input_file', 'filename' => $file->name, 'file_data' => $file->dataUri()],
+                default => $image
+                    ? ['type' => 'image_url', 'image_url' => ['url' => $file->dataUri()]]
+                    : ['type' => 'file', 'file' => ['filename' => $file->name, 'file_data' => $file->dataUri()]],
+            };
+        }
+
+        $text = trim($text);
+        if ($text !== '') {
+            $parts[] = ['type' => $format === ChatRequest::FORMAT_RESPONSES ? 'input_text' : 'text', 'text' => $text];
+        }
+
+        return $parts;
     }
 }

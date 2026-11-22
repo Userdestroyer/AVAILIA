@@ -93,12 +93,19 @@ class MessageController extends Controller
             ->orderBy('id')
             ->get();
 
+        // Только свои файлы и в том порядке, как их приложили; чужой id — как несуществующий
+        $fileIds = $request->input('file_ids') ?? [];
+        $files = $user->files()->whereIn('id', $fileIds)->get()->keyBy('id');
+        if ($files->count() !== count($fileIds)) {
+            return response()->json(['message' => 'Приложенный файл не найден — прикрепите его заново.'], 422);
+        }
+
         $started = $stream->start(
             $user,
             $chat,
             // Порядок — как выбрал юзер: первая модель — основная
             collect($modelIds)->map(fn (int $id) => $offers[$id]),
-            $request->string('content')->trim(),
+            (string) $request->string('content')->trim(),
             new ChatOptions(
                 maxTokens: $request->input('max_tokens'),
                 reasoningEffort: $request->enum('reasoning_effort', ReasoningEffort::class),
@@ -108,6 +115,7 @@ class MessageController extends Controller
                 allowedDomains: $request->input('allowed_domains') ?? [],
             ),
             $plates,
+            collect($fileIds)->map(fn (string $id) => $files[$id])->values(),
         );
 
         return response()->json([

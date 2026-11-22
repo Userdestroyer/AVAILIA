@@ -42,6 +42,8 @@ class MessageResource extends JsonResource
                 fn (array $entry) => ['plate_id' => $entry['plate_id'], 'title' => $entry['title']],
                 $this->context ?? [],
             ),
+            // Приложенные к вопросу файлы — превью над ним
+            'files' => ! $isAnswer && $this->relationLoaded('files') ? $this->files->map->present()->all() : [],
         ];
     }
 

@@ -8,6 +8,7 @@ use App\Services\CurrencyConverter;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
@@ -58,6 +59,14 @@ class Message extends Model
     public function answers(): HasMany
     {
         return $this->hasMany(self::class, 'parent_id');
+    }
+
+    /**
+     * Файлы, которые ушли с вопросом, в том порядке, как их приложили.
+     */
+    public function files(): BelongsToMany
+    {
+        return $this->belongsToMany(UserFile::class, 'message_files')->withPivot('sort')->orderByPivot('sort');
     }
 
     public function provider(): BelongsTo
