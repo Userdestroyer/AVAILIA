@@ -41,7 +41,7 @@ class HandleInertiaRequests extends Middleware
                     'settings' => $user->interfaceSettings(),
                 ] : null,
             ],
-            'recentChats' => fn () => $user?->chats()->latest('updated_at')->limit(30)->get(['id', 'title', 'updated_at']) ?? [],
+            'recentChats' => fn () => $user?->chats()->latest('updated_at')->limit(30)->get(['id', 'title', 'mode', 'updated_at']) ?? [],
             // Заполнение лимитов (окна текста и агентов, ₽) и баланс токенов — кольцо у кнопки отправки.
             // После каждого ответа фронт перезагружает только этот проп
             'usage' => fn () => $user ? [

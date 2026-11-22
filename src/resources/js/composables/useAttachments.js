@@ -22,7 +22,8 @@ export function loadLibrary() {
     return loading;
 }
 
-const remember = (file) => {
+// Новый файл — в начало галереи (загруженный или сгенерированный)
+export const remember = (file) => {
     library.files = [file, ...library.files.filter((f) => f.id !== file.id)];
 };
 

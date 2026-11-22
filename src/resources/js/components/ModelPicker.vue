@@ -58,7 +58,7 @@ const toggle = (what) => (open.value = open.value === what ? null : what);
         >
             <span class="min-w-0 flex-1">
                 <span class="block truncate text-[15px]">{{ model?.name ?? 'Выберите модель' }}</span>
-                <span class="block truncate text-xs text-fg/50">{{ vendor?.product }} · {{ model?.description }}</span>
+                <span class="block truncate text-xs text-fg/50">{{ [vendor?.product, model?.description].filter(Boolean).join(' · ') }}</span>
             </span>
             <ChevronDown class="vein size-4 shrink-0 transition" :class="{ 'rotate-180': open === 'model' }" :stroke-width="1.5" />
         </button>
@@ -101,7 +101,8 @@ const toggle = (what) => (open.value = open.value === what ? null : what);
                 <span class="min-w-0 flex-1">
                     <span class="block text-[15px]">{{ m.name }}</span>
                     <span class="block text-xs text-fg/50">
-                        <template v-if="m.price_input !== null && m.price_output !== null">
+                        <template v-if="m.price_label">{{ m.price_label }}</template>
+                        <template v-else-if="m.price_input != null && m.price_output != null">
                             {{ formatPrice(m.price_input, m.price_currency) }} / {{ formatPrice(m.price_output, m.price_currency) }} за 1M токенов
                         </template>
                         <template v-else>цена не указана</template>

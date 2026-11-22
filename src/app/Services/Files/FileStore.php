@@ -73,6 +73,21 @@ class FileStore
     }
 
     /**
+     * Файл, полученный не от юзера (сгенерированная картинка), — через ту же точку входа.
+     */
+    public function storeContents(User $user, string $contents, string $name, FileSource $source): UserFile
+    {
+        $path = tempnam(sys_get_temp_dir(), 'file');
+        file_put_contents($path, $contents);
+
+        try {
+            return $this->store($user, new UploadedFile($path, $name, null, null, true), $source);
+        } finally {
+            @unlink($path);
+        }
+    }
+
+    /**
      * @return array{0: int, 1: int}
      */
     private function dimensions(UploadedFile $upload): array

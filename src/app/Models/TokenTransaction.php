@@ -15,5 +15,10 @@ class TokenTransaction extends Model
 
     public const ADMIN = 'admin';
 
+    // Генерация медиа: удержание по прайсу при старте, пересчёт по факту, возврат при ошибке
+    public const GENERATION = 'generation';
+
+    public const REFUND = 'refund';
+
     public const UPDATED_AT = null;
 }

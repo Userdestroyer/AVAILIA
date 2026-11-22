@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Ai;
 
+use App\Enums\AiModelType;
 use App\Models\AiModel;
 use App\Models\Provider;
 use Database\Seeders\DatabaseSeeder;
@@ -20,7 +21,7 @@ class ImportModelsTest extends TestCase
     protected bool $seed = true;
 
     #[Group('D1')]
-    #[TestDox('Импорт из каталога Polza добавляет скрытыми только самые свежие модели нужных вендоров — с ценами, лимитами и возможностями; подключённые не дублирует')]
+    #[TestDox('Импорт из каталога Polza добавляет скрытыми только самые свежие модели текста и картинок нужных вендоров — с ценами, лимитами, параметрами и возможностями; подключённые не дублирует')]
     public function test_imports_freshest_models_hidden(): void
     {
         $item = fn (string $id, string $name, int $created, array $inputs = ['text']) => [
@@ -35,7 +36,17 @@ class ImportModelsTest extends TestCase
                 'pricing' => ['prompt_per_million' => '12', 'completion_per_million' => '60', 'currency' => 'RUB'],
             ],
         ];
-        Http::fake(['*/models*' => Http::response(['data' => [
+        $images = [[
+            'id' => 'bytedance/seedream-5-lite',
+            'type' => 'image',
+            'name' => 'Seedream 5.0 Lite',
+            'created' => 100,
+            'top_provider' => [
+                'parameters' => ['aspect_ratio' => ['values' => ['1:1', '16:9']], 'images' => ['min' => 0, 'max' => 10]],
+                'pricing' => ['per_request' => '4.00', 'currency' => 'RUB'],
+            ],
+        ]];
+        $chat = [
             $item('anthropic/claude-opus-6', 'Anthropic: Claude Opus 6', 300, ['text', 'image', 'file']),
             // Уже подключена (сидер) — не дублируется, но место в «свежих» занимает
             $item('anthropic/claude-haiku-5.5', 'Anthropic: Claude Haiku 5.5', 200),
@@ -44,7 +55,8 @@ class ImportModelsTest extends TestCase
             $item('x-ai/grok-5', 'SpaceXAI: Grok 5', 250),
             // Вендора нет в списке импорта
             $item('mistralai/mistral-large', 'Mistral: Large', 400),
-        ]])]);
+        ];
+        Http::fake(['*/models*' => fn ($request) => Http::response(['data' => str_contains($request->url(), 'type=image') ? $images : $chat])]);
 
         $this->artisan('models:import', ['--limit' => 2])->assertSuccessful();
 
@@ -62,6 +74,12 @@ class ImportModelsTest extends TestCase
         $this->assertFalse(AiModel::where('slug', 'claude-sonnet-4.5')->exists());
         $this->assertFalse(AiModel::where('slug', 'mistral-large')->exists());
         $this->assertSame(1, AiModel::where('name', 'Claude Haiku 5.5')->count());
+
+        // Картинки — своей моделью: прайс за запрос и схема параметров вместо цен за токены
+        $seedream = AiModel::where('slug', 'seedream-5-lite')->with('offerings.capabilities')->sole();
+        $this->assertSame([AiModelType::Image, false, 'ByteDance'], [$seedream->type, $seedream->is_active, $seedream->vendor->name]);
+        $this->assertSame(['per_request' => '4.00', 'currency' => 'RUB'], $seedream->offerings->sole()->pricing);
+        $this->assertSame(['images'], $seedream->offerings->sole()->capabilities->map(fn ($row) => $row->capability->value)->all());
 
         // Повторный запуск ничего не добавляет
         $count = AiModel::count();

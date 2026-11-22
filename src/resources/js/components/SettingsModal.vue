@@ -164,8 +164,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
                     <!-- Обо мне -->
                     <div v-if="tab === 'context'" class="scrollbar-glass min-h-0 flex-1 overflow-y-auto px-3 pb-3 md:px-5 md:pb-5">
                         <p class="px-1 text-sm text-fg/55">
-                            Картриджи контекста. В запрос они вставляются целиком, копировать ничего не нужно: подключаются через
-                            <span class="text-fg/80">#тег</span> в поле ввода или сами, если закреплены. Модель видит только подключённые.
+                            Картриджи контекста. Прикладываются к сообщению целиком, копировать ничего не нужно: через
+                            <span class="text-fg/80">#тег</span> в поле ввода, а закреплённые — сами, в начале нового чата. Модель видит картридж
+                            с того места разговора, где его приложили, и в той версии.
                         </p>
 
                         <p v-if="!loaded" class="mt-4 px-1 text-sm text-fg/40">Загружаю…</p>
@@ -199,7 +200,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
                                         class="min-w-0 flex-1 bg-transparent text-[15px] outline-none"
                                         @focus="expanded = plate.uid"
                                     />
-                                    <span v-if="plate.saved?.tokens !== undefined" class="hidden shrink-0 text-xs text-fg/40 tabular-nums sm:inline" title="Примерно столько токенов добавит к каждому запросу">
+                                    <span v-if="plate.saved?.tokens !== undefined" class="hidden shrink-0 text-xs text-fg/40 tabular-nums sm:inline" title="Примерно столько токенов добавит к разговору, когда его приложат">
                                         ≈ {{ plate.saved.tokens }} ток.
                                     </span>
                                     <button

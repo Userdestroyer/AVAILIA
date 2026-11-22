@@ -6,8 +6,8 @@ import MessageFiles from '@/components/chat/MessageFiles.vue';
 import { getJson } from '@/lib/http';
 
 /**
- * Вопрос в ленте: файлы и картриджи над ним, пузырь, действия. С картриджами его можно развернуть
- * целиком — каким он ушёл в модель: каждый картридж в своей версии, под тонкой линией с подписью.
+ * Вопрос в ленте: отметка о приложенных к нему картриджах, файлы, пузырь, действия. Вопрос с картриджами
+ * можно развернуть целиком — каким он ушёл в модель: каждый картридж в своей версии, под тонкой линией с подписью.
  */
 const props = defineProps({
     question: { type: Object, required: true },
@@ -48,17 +48,15 @@ const canExpand = () => props.question.context?.length && Number.isInteger(props
 
 <template>
     <div class="group flex flex-col items-end gap-0.5">
-        <!-- Какие картриджи ушли с вопросом -->
-        <div v-if="question.context?.length && !expanded" class="mb-0.5 flex max-w-[85%] flex-wrap justify-end gap-1">
-            <span
-                v-for="item in question.context"
-                :key="item.plate_id"
-                class="flex items-center gap-1 text-[11px] text-fg/45"
-                :title="`Картридж «${item.title}» был подключён к вопросу`"
-            >
-                <Disc3 class="vein size-3" :stroke-width="1.5" />
-                {{ item.title }}
+        <!-- Картриджи приложены к этому вопросу: отметка в ленте — с этого места разговор идёт с ними -->
+        <div v-if="question.context?.length" class="mb-1 flex w-full items-center gap-2 text-[11px] text-fg/45">
+            <span class="h-px flex-1 bg-fg/10" />
+            <Disc3 class="vein size-3 shrink-0" :stroke-width="1.5" />
+            <span class="min-w-0 truncate">
+                {{ question.context.length === 1 ? 'Подключён картридж' : 'Подключены картриджи' }}
+                {{ question.context.map((item) => `«${item.title}»`).join(', ') }}
             </span>
+            <span class="h-px flex-1 bg-fg/10" />
         </div>
         <MessageFiles v-if="question.files?.length" class="mb-0.5" :files="question.files" />
         <div

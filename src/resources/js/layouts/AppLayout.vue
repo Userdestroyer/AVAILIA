@@ -1,11 +1,12 @@
 <script setup>
 import { Link, router, usePage } from '@inertiajs/vue3';
-import { CircleHelp, Disc3, History, LogOut, MessageSquare, Settings, Sparkle, SquarePen, ChevronRight, Trash2 } from 'lucide-vue-next';
+import { CircleHelp, Disc3, History, Image, LogOut, MessageSquare, Settings, Sparkle, SquarePen, ChevronRight, Trash2 } from 'lucide-vue-next';
 import { computed, onBeforeUnmount, ref } from 'vue';
 import { useMediaQuery } from '@/composables/useMediaQuery';
 import { useSidebar } from '@/composables/useSidebar';
 import { deleteJson } from '@/lib/http';
 import AppBackground from '@/components/AppBackground.vue';
+import ImageLightbox from '@/components/ImageLightbox.vue';
 import SettingsModal from '@/components/SettingsModal.vue';
 import { useThinking } from '@/composables/useThinking';
 
@@ -84,6 +85,7 @@ const deleteChat = async (id) => {
 <template>
     <AppBackground :thinking="thinking" />
     <SettingsModal v-model:open="settingsOpen" v-model:tab="settingsTab" />
+    <ImageLightbox />
 
     <!-- Под открытой шторкой всё размывается; тап мимо — закрыть -->
     <Transition enter-active-class="transition duration-200" enter-from-class="opacity-0" leave-active-class="transition duration-200" leave-to-class="opacity-0">
@@ -130,12 +132,13 @@ const deleteChat = async (id) => {
                 <li v-for="chat in recentChats" :key="chat.id" class="group relative">
                     <!-- Подгружается при наведении — к клику чат уже на месте -->
                     <Link
-                        :href="`/text/${chat.id}`"
+                        :href="`/${chat.mode === 'image' ? 'images' : 'text'}/${chat.id}`"
                         prefetch="hover"
                         cache-for="5s"
                         class="flex items-center gap-2 rounded-xl py-2 pr-2 pl-4 text-sm text-fg/65 hover:bg-fg/5 hover:text-fg"
                         :class="{ 'bg-fg/8 text-fg': isActive(chat.id) }"
                     >
+                        <Image v-if="chat.mode === 'image'" class="size-3.5 shrink-0 text-cool-soft" :stroke-width="1.5" />
                         <span class="min-w-0 flex-1 truncate">{{ chat.title || 'Без названия' }}</span>
                         <!-- Время уступает место урне при наведении -->
                         <span class="shrink-0 text-[11px] text-fg/40 tabular-nums transition group-hover:opacity-0">{{ when(chat.updated_at) }}</span>

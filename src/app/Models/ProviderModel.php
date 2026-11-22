@@ -16,7 +16,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 #[Fillable([
     'provider_id', 'ai_model_id', 'external_id', 'upstream', 'context_length', 'max_output_tokens',
     'price_input', 'price_output', 'price_cache_read', 'price_cache_write', 'price_web_search', 'price_currency',
-    'is_active',
+    'is_active', 'parameters', 'pricing',
 ])]
 class ProviderModel extends Model
 {
@@ -31,6 +31,8 @@ class ProviderModel extends Model
             'context_length' => 'integer',
             'max_output_tokens' => 'integer',
             'is_active' => 'boolean',
+            'parameters' => 'array',
+            'pricing' => 'array',
         ];
     }
 

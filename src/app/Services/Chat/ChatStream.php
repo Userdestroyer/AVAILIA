@@ -38,7 +38,7 @@ class ChatStream
 
     /**
      * @param  Collection<int, ProviderModel>  $offers  предложения моделей у провайдера, в порядке выбора юзера
-     * @param  Collection<int, ContextPlate>  $plates  подключённые картриджи — уже только свои (отобраны по владельцу)
+     * @param  Collection<int, ContextPlate>  $plates  приложенные к вопросу картриджи — уже только свои (отобраны по владельцу)
      * @param  Collection<int, UserFile>  $files  приложенные файлы — уже только свои, в порядке прикрепления
      * @return array{chat: Chat, userMessage: Message, answers: list<array{message: Message, token: string}>}
      */
@@ -50,7 +50,17 @@ class ChatStream
         // Вопрос без подписи (только файлы) — назовём чат по ним
         $topic = $content !== '' ? $content : $files->pluck('name')->join(', ');
 
-        [$chat, $userMessage, $answers] = DB::transaction(function () use ($user, $chat, $offers, $content, $plates, $files, $topic) {
+        // Картридж прикладывается к вопросу в текущей версии; уже приложенный выше в той же версии — не повторяем
+        $attached = $plates->map(fn (ContextPlate $plate) => ['plate_id' => $plate->id, 'version_id' => $plate->current_version_id, 'title' => $plate->title]);
+        if ($chat && $attached->isNotEmpty()) {
+            $earlier = $chat->messages()->where('role', MessageRole::User)->whereNotNull('context')->get(['context'])
+                ->flatMap(fn (Message $question) => $question->context)
+                ->map(fn (array $entry) => $entry['plate_id'].':'.($entry['version_id'] ?? ''))
+                ->flip();
+            $attached = $attached->reject(fn (array $entry) => $earlier->has($entry['plate_id'].':'.$entry['version_id']));
+        }
+
+        [$chat, $userMessage, $answers] = DB::transaction(function () use ($user, $chat, $offers, $content, $attached, $files, $topic) {
             $primary = $offers->first()->aiModel;
 
             if ($chat) {
@@ -63,12 +73,8 @@ class ChatStream
             $userMessage = $chat->messages()->create([
                 'role' => MessageRole::User,
                 'content' => $content,
-                // Что именно (какие версии) ушло в модель вместе с вопросом
-                'context' => $plates->isEmpty() ? null : $plates->map(fn (ContextPlate $plate) => [
-                    'plate_id' => $plate->id,
-                    'version_id' => $plate->current_version_id,
-                    'title' => $plate->title,
-                ])->values()->all(),
+                // Какие картриджи (в каких версиях) приложены к этому вопросу
+                'context' => $attached->isEmpty() ? null : $attached->values()->all(),
             ]);
 
             if ($files->isNotEmpty()) {
@@ -92,23 +98,22 @@ class ChatStream
             GenerateChatTitle::dispatch($chat->id, $topic);
         }
 
-        $conversation = $chat->messages()->where('id', '<=', $userMessage->id)->with('files')->orderBy('id')->get();
+        [$system, $conversation] = ContextPrompt::inline($user, $chat->messages()->where('id', '<=', $userMessage->id)->with('files')->orderBy('id')->get());
         $started = $answers->map(fn (Message $answer) => [
             'message' => $answer,
-            'token' => $this->dispatch($answer, $offers->firstWhere('ai_model_id', $answer->ai_model_id), $conversation, $plates, $options),
+            'token' => $this->dispatch($answer, $offers->firstWhere('ai_model_id', $answer->ai_model_id), $system, $conversation, $options),
         ]);
 
         return ['chat' => $chat, 'userMessage' => $userMessage, 'answers' => $started->values()->all()];
     }
 
     /**
-     * Ещё один вариант ответа той же модели на тот же вопрос — с тем же контекстом, что ушёл с вопросом.
-     * Новый вариант становится текущим: его видно в чате и он идёт в историю дальше.
+     * Ещё один вариант ответа той же модели на тот же вопрос — с теми же картриджами в тех же версиях
+     * (они записаны у вопросов). Новый вариант становится текущим: его видно в чате и он идёт в историю дальше.
      *
-     * @param  Collection<int, ContextPlate>  $plates  картриджи вопроса в тех версиях, что ушли с ним
      * @return array{message: Message, token: string}
      */
-    public function regenerate(Message $answer, ProviderModel $offer, ChatOptions $options, Collection $plates): array
+    public function regenerate(Message $answer, ProviderModel $offer, ChatOptions $options): array
     {
         $chat = $answer->chat;
 
@@ -131,20 +136,20 @@ class ChatStream
             ? $message->id <= $answer->parent_id
             : $message->parent_id < $answer->parent_id);
 
-        return ['message' => $variant, 'token' => $this->dispatch($variant, $offer, $conversation->values(), $plates, $options)];
+        [$system, $conversation] = ContextPrompt::inline($chat->user, $conversation->values());
+
+        return ['message' => $variant, 'token' => $this->dispatch($variant, $offer, $system, $conversation, $options)];
     }
 
     /**
      * Стрим-задание для гейтвея: тело запроса — в Redis под одноразовым токеном.
      *
-     * @param  Collection<int, Message>  $conversation
-     * @param  Collection<int, ContextPlate>  $plates
+     * @param  ?Message  $system  неподвижная инструкция о картриджах (если они есть в разговоре)
+     * @param  Collection<int, Message>  $conversation  картриджи — уже в сообщениях, к которым приложены
      */
-    private function dispatch(Message $answer, ProviderModel $offer, Collection $conversation, Collection $plates, ChatOptions $options): string
+    private function dispatch(Message $answer, ProviderModel $offer, ?Message $system, Collection $conversation, ChatOptions $options): string
     {
-        // Картриджи — системным сообщением в начале: одинаковое начало у всех моделей и ходов
-        $system = ContextPrompt::build($plates);
-        $preamble = $system ? collect([new Message(['role' => MessageRole::System, 'content' => $system])]) : collect();
+        $preamble = $system ? collect([$system]) : collect();
         $provider = $this->providers->provider($offer->provider->slug);
         $request = $provider->request($offer, $preamble->concat($this->historyFor($conversation, $offer->aiModel)), $options);
 

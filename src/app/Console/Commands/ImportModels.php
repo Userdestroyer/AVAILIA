@@ -2,18 +2,20 @@
 
 namespace App\Console\Commands;
 
+use App\Enums\AiModelType;
 use App\Services\Ai\PolzaCatalog;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 
 #[Signature('models:import {--limit= : Сколько самых свежих моделей каждого вендора смотреть (по умолчанию ai.import.per_vendor)}')]
-#[Description('Новые модели из каталога Polza — скрытыми, с ценами, лимитами и возможностями; у подключённых обновляет цены')]
+#[Description('Новые модели текста и картинок из каталога Polza — скрытыми, с ценами, лимитами и возможностями; у подключённых обновляет цены')]
 class ImportModels extends Command
 {
     public function handle(PolzaCatalog $catalog): int
     {
-        $added = $catalog->import((int) ($this->option('limit') ?: config('ai.import.per_vendor')));
+        $limit = (int) ($this->option('limit') ?: config('ai.import.per_vendor'));
+        $added = [...$catalog->import($limit), ...$catalog->import($limit, AiModelType::Image)];
         $updated = $catalog->sync();
 
         if ($added) {

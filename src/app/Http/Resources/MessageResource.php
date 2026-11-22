@@ -25,6 +25,7 @@ class MessageResource extends JsonResource
             // Варианты ответа одной модели (регенерация) группируются по ней; показывается текущий
             'ai_model_id' => $isAnswer ? $this->ai_model_id : null,
             'is_current' => $this->is_current ?? true,
+            'created_at' => $this->created_at?->toIso8601String(),
             'role' => $this->role,
             'status' => $lost ? MessageStatus::Failed : $this->status,
             'content' => $this->content ?? '',
@@ -45,8 +46,13 @@ class MessageResource extends JsonResource
                 fn (array $entry) => ['plate_id' => $entry['plate_id'], 'title' => $entry['title']],
                 $this->context ?? [],
             ),
-            // Приложенные к вопросу файлы — превью над ним
-            'files' => ! $isAnswer && $this->relationLoaded('files') ? $this->files->map->present()->all() : [],
+            // Файлы: у вопроса — приложенные (превью над ним), у ответа — сгенерированные картинки
+            'files' => $this->relationLoaded('files') ? $this->files->map->present()->all() : [],
+            // Генерация картинки: параметры и токены контента (по факту, а пока рисуется — оценка)
+            'image' => $isAnswer && $this->generation ? [
+                'params' => (object) ($this->generation['params'] ?? []),
+                'tokens' => $this->generation['spent'] ?? $this->generation['estimate'] ?? null,
+            ] : null,
         ];
     }
 

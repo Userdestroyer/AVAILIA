@@ -55,7 +55,7 @@ const activate = async (slug) => {
 
 // Сервисная модель: фоновые задачи (название чата и т.п.) — только подключённые у активного провайдера
 const serviceModel = ref(props.serviceModel);
-const serviceCandidates = computed(() => props.models.filter((m) => m.is_active && m.offerings[active.value]?.is_active));
+const serviceCandidates = computed(() => props.models.filter((m) => m.type === 'text' && m.is_active && m.offerings[active.value]?.is_active));
 const chooseServiceModel = async (id) => {
     const previous = serviceModel.value;
     serviceModel.value = id;
@@ -551,7 +551,10 @@ const providerName = computed(() => props.providers.find((p) => p.slug === tab.v
                                             <div class="flex items-center gap-2">
                                                 <VendorIcon :slug="vendorOf(model.vendor_id)?.slug ?? ''" />
                                                 <div class="min-w-0">
-                                                    <div class="truncate">{{ model.name }}</div>
+                                                    <div class="truncate">
+                                                        {{ model.name }}
+                                                        <span v-if="model.type === 'image'" class="ml-1 rounded-full bg-cool/15 px-1.5 py-0.5 text-[10px] text-cool-soft">картинки</span>
+                                                    </div>
                                                     <div class="truncate font-mono text-xs text-fg/40">{{ model.slug }}</div>
                                                 </div>
                                             </div>

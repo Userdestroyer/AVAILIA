@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\RegenerateMessageRequest;
 use App\Http\Requests\StoreMessageRequest;
+use App\Enums\AiModelType;
 use App\Enums\MessageRole;
 use App\Enums\MessageStatus;
 use App\Http\Resources\MessageResource;
@@ -90,7 +91,7 @@ class MessageController extends Controller
             return response()->json(['message' => 'Эта модель сейчас недоступна у провайдера — выберите другую.'], 422);
         }
 
-        $started = $stream->regenerate($message, $offer, $request->options(), ContextPrompt::recorded($user, $message->parent));
+        $started = $stream->regenerate($message, $offer, $request->options());
 
         return response()->json([
             'message' => MessageResource::make($started['message']),
@@ -114,7 +115,7 @@ class MessageController extends Controller
     }
 
     /**
-     * Вопрос целиком: картриджи в тех версиях, что ушли с ним в модель.
+     * Вопрос целиком: картриджи, приложенные к нему, в тех версиях, что ушли в модель.
      */
     public function context(Request $request, Message $message): JsonResponse
     {
@@ -143,9 +144,9 @@ class MessageController extends Controller
         }
 
         // Чужой или несуществующий чат — 404, а не новый чат
-        $chat = $request->filled('chat_id') ? $user->chats()->findOrFail($request->input('chat_id')) : null;
+        $chat = $request->filled('chat_id') ? $user->chats()->where('mode', AiModelType::Text)->findOrFail($request->input('chat_id')) : null;
 
-        // Только свои картриджи: фильтр по владельцу — в самом запросе, чужой id сюда не попадёт
+        // Картриджи, приложенные к вопросу, — только свои: фильтр по владельцу в самом запросе, чужой id сюда не попадёт
         $plates = $user->plates()
             ->whereIn('id', $request->input('plate_ids') ?? [])
             ->with('tags')

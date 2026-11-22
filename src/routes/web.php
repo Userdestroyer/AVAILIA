@@ -5,6 +5,7 @@ use App\Http\Controllers\Admin\LimitsController;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\ContextController;
 use App\Http\Controllers\FileController;
+use App\Http\Controllers\ImageController;
 use App\Http\Controllers\MessageController;
 use App\Http\Controllers\SettingsController;
 use App\Http\Controllers\TextController;
@@ -39,7 +40,10 @@ Route::middleware('auth')->group(function () {
     Route::get('/files/{file}', [FileController::class, 'show'])->whereUuid('file')->name('files.show');
     Route::get('/files/{file}/thumb', [FileController::class, 'thumb'])->whereUuid('file')->name('files.thumb');
 
-    Route::inertia('/images', 'Mode/Placeholder', ['mode' => 'images'])->name('images');
+    Route::get('/images', [ImageController::class, 'index'])->name('images');
+    Route::get('/images/{chat}', [ImageController::class, 'show'])->whereUuid('chat')->name('images.chat');
+    Route::post('/images/messages', [ImageController::class, 'store'])->name('images.messages');
+    Route::get('/images/messages/{message}', [ImageController::class, 'status'])->name('images.messages.status');
     Route::inertia('/video', 'Mode/Placeholder', ['mode' => 'video'])->name('video');
     Route::inertia('/audio', 'Mode/Placeholder', ['mode' => 'audio'])->name('audio');
     Route::middleware('can:admin')->prefix('admin')->name('admin.')->group(function () {

@@ -38,6 +38,15 @@ return [
             'x-ai' => 'xai',
             'openai' => 'openai',
         ],
+        // Картинки: GPT Image, Nano Banana, Grok Image, Seedream (у Polza Seedream и Grok — под двумя префиксами)
+        'image_vendors' => [
+            'openai' => 'openai',
+            'google' => 'google',
+            'x-ai' => 'xai',
+            'grok-imagine-image-2-0' => 'xai',
+            'bytedance' => 'bytedance',
+            'seedream' => 'bytedance',
+        ],
         'per_vendor' => 10,
     ],
 

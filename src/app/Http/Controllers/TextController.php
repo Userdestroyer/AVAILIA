@@ -4,7 +4,6 @@ namespace App\Http\Controllers;
 
 use App\Enums\AiModelType;
 use App\Enums\Capability;
-use App\Enums\MessageRole;
 use App\Models\ContextPlate;
 use App\Http\Resources\MessageResource;
 use App\Models\Chat;
@@ -12,7 +11,9 @@ use App\Models\ProviderModel;
 use App\Models\Vendor;
 use App\Services\Ai\AiProvider;
 use App\Services\Ai\ProviderRegistry;
+use App\Services\Chat\ContextPrompt;
 use Illuminate\Support\Arr;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response as HttpResponse;
 use Inertia\Inertia;
@@ -27,10 +28,13 @@ class TextController extends Controller
         return $this->render();
     }
 
-    public function show(Request $request, string $chat): Response
+    public function show(Request $request, string $chat): Response|RedirectResponse
     {
-        // Чужой чат — 404, чтобы не подтверждать его существование
+        // Чужой чат — 404, чтобы не подтверждать его существование; чат картинок — в свой режим
         $chat = $request->user()->chats()->findOrFail($chat);
+        if ($chat->mode === AiModelType::Image) {
+            return redirect("/images/{$chat->id}");
+        }
 
         return $this->render($chat);
     }
@@ -48,18 +52,17 @@ class TextController extends Controller
     private function render(?Chat $chat = null): Response
     {
         $messages = $chat?->messages()->with(['aiModel.vendor', 'chat.user', 'files'])->orderBy('id')->get();
-        // Картриджи, подключённые к последнему вопросу, — чтобы продолжить чат с тем же контекстом
-        $lastContext = $messages?->where('role', MessageRole::User)->last()?->context;
+        // Картридж виден там, где его приложили (в старых чатах он записан у каждого вопроса)
+        if ($messages) {
+            ContextPrompt::firstAttached($messages);
+        }
 
         return Inertia::render('Text/Index', [
             'vendors' => $this->vendors(),
             // Без содержимого: для чипов над полем ввода и подсказок `#` хватает названий и тегов
             'plates' => auth()->user()->plates()->with('tags')->orderBy('sort')->orderBy('id')->get()
                 ->map(fn (ContextPlate $plate) => ContextController::present($plate, withContent: false)),
-            'chat' => $chat ? [
-                ...$chat->only('id', 'title', 'ai_model_id'),
-                'plate_ids' => $lastContext ? array_column($lastContext, 'plate_id') : [],
-            ] : null,
+            'chat' => $chat?->only('id', 'title', 'ai_model_id'),
             'messages' => $messages ? MessageResource::collection($messages)->resolve() : [],
             // Браузер жмёт картинку, только если она не влезает в лимит
             'fileLimits' => ['max_bytes' => config('files.max_kb') * 1024, 'per_message' => config('files.per_message')],

@@ -24,7 +24,7 @@ class AnswerVariantsTest extends TestCase
     protected bool $seed = true;
 
     #[Group('D1')]
-    #[TestDox('Перегенерация: новый вариант с контекстом, ушедшим с вопросом, без прежних ответов на него; в историю идёт выбранный вариант; не больше 5 перегенераций')]
+    #[TestDox('Перегенерация: новый вариант с картриджами в версиях, ушедших с вопросом, без прежних ответов на него; в историю идёт выбранный вариант; не больше 5 перегенераций')]
     public function test_regenerated_variant_and_selected_history(): void
     {
         $jobs = $this->captureStreamJobs();
@@ -36,17 +36,17 @@ class AnswerVariantsTest extends TestCase
             ->assertJsonPath('message.is_current', true);
 
         $messages = $jobs()[0][1]['body']['messages'];
-        // Картридж в той версии, что ушла с вопросом, а не в правленой после
-        $this->assertSame('system', $messages[0]['role']);
-        $this->assertStringContainsString('Пишу на Go', $messages[0]['content']);
-        $this->assertStringNotContainsString('Rust', $messages[0]['content']);
-        $this->assertSame(['Как дела?'], array_column(array_slice($messages, 1), 'content'));
+        // Картридж в той версии, что ушла с вопросом, а не в правленой после; прежнего ответа на вопрос нет
+        $this->assertSame(['system', 'user'], array_column($messages, 'role'));
+        $this->assertStringContainsString("Пишу на Go\n</cartridge>\n\nКак дела?", $messages[1]['content']);
+        $this->assertStringNotContainsString('Rust', $messages[1]['content']);
         $this->assertFalse($answer->fresh()->is_current);
 
         // Вернулись к первому варианту — его модель и увидит дальше
         $this->patchJson("/text/messages/{$answer->id}/current")->assertNoContent();
         $this->postJson('/text/messages', ['chat_id' => $chat->id, 'ai_model_ids' => [$model->id], 'content' => 'Дальше'])->assertCreated();
-        $this->assertSame(['Как дела?', 'Первый', 'Дальше'], array_column($jobs()[1][1]['body']['messages'], 'content'));
+        $this->assertSame(['system', 'user', 'assistant', 'user'], array_column($jobs()[1][1]['body']['messages'], 'role'));
+        $this->assertSame(['Первый', 'Дальше'], array_slice(array_column($jobs()[1][1]['body']['messages'], 'content'), 2));
 
         // Исходный и 5 перегенераций — шестой раз не даёт
         Message::where('parent_id', $answer->parent_id)->update(['status' => MessageStatus::Done]);

@@ -14,6 +14,7 @@ class VendorSeeder extends Seeder
             ['slug' => 'google', 'name' => 'Google', 'product' => 'Gemini'],
             ['slug' => 'xai', 'name' => 'xAI', 'product' => 'Grok'],
             ['slug' => 'openai', 'name' => 'OpenAI', 'product' => 'ChatGPT'],
+            ['slug' => 'bytedance', 'name' => 'ByteDance', 'product' => 'Seedream'],
         ];
 
         foreach ($vendors as $sort => $vendor) {

@@ -31,6 +31,34 @@ class TokenWallet
     }
 
     /**
+     * Списать, только если хватает баланса (атомарно — условием в самом UPDATE). false — не хватило.
+     */
+    public function spend(User $user, int $amount, string $reason, ?string $comment = null): bool
+    {
+        if ($amount <= 0) {
+            return true;
+        }
+
+        return DB::transaction(function () use ($user, $amount, $reason, $comment) {
+            if (! User::whereKey($user->id)->where('content_tokens', '>=', $amount)->decrement('content_tokens', $amount)) {
+                return false;
+            }
+
+            $balance = (int) User::whereKey($user->id)->value('content_tokens');
+            $user->content_tokens = $balance;
+            TokenTransaction::create([
+                'user_id' => $user->id,
+                'amount' => -$amount,
+                'balance_after' => $balance,
+                'reason' => $reason,
+                'comment' => $comment,
+            ]);
+
+            return true;
+        });
+    }
+
+    /**
      * Ежемесячное начисление по тарифу, если с прошлого прошёл месяц (или его не было).
      * Неиспользованные токены копятся. Повторный вызов в том же месяце ничего не делает.
      */

@@ -17,8 +17,8 @@ use Illuminate\Support\Str;
  */
 class PolzaCatalog
 {
-    /** @var list<array<string, mixed>>|null */
-    private ?array $catalog = null;
+    /** @var array<string, list<array<string, mixed>>> каталог по типу моделей */
+    private array $catalogs = [];
 
     /**
      * Обновляет подключённые модели Polza по их external_id (ничего не добавляет).
@@ -28,7 +28,7 @@ class PolzaCatalog
      */
     public function sync(): int
     {
-        $byId = collect($this->catalog())->keyBy('id');
+        $byId = collect($this->catalog(AiModelType::Text))->concat($this->catalog(AiModelType::Image))->keyBy('id');
         $updated = 0;
 
         foreach ($this->provider()->offerings as $offer) {
@@ -46,20 +46,20 @@ class PolzaCatalog
     }
 
     /**
-     * Новые модели из каталога: у каждого вендора из config ai.import.vendors — самые свежие $perVendor
-     * (по дате появления у Polza), которых у нас ещё нет. Создаются скрытыми — включает админ;
-     * цены, лимиты и возможности — сразу из каталога.
+     * Новые модели из каталога: у каждого вендора из config ai.import (текст — vendors, картинки — image_vendors)
+     * самые свежие $perVendor (по дате появления у Polza), которых у нас ещё нет. Создаются скрытыми —
+     * включает админ; цены, лимиты, параметры и возможности — сразу из каталога.
      *
      * @return list<array{vendor: string, id: string, name: string}> что добавлено
      */
-    public function import(int $perVendor): array
+    public function import(int $perVendor, AiModelType $type = AiModelType::Text): array
     {
-        $catalog = collect($this->catalog())->filter(fn (array $item) => isset($item['top_provider']));
+        $catalog = collect($this->catalog($type))->filter(fn (array $item) => isset($item['top_provider']));
         $provider = $this->provider();
         $connected = $provider->offerings()->pluck('external_id')->flip();
         $added = [];
 
-        foreach (config('ai.import.vendors') as $prefix => $slug) {
+        foreach (config($type === AiModelType::Image ? 'ai.import.image_vendors' : 'ai.import.vendors') as $prefix => $slug) {
             $vendor = Vendor::where('slug', $slug)->first();
             $fresh = $catalog
                 ->filter(fn (array $item) => str_starts_with($item['id'], "{$prefix}/"))
@@ -71,11 +71,11 @@ class PolzaCatalog
                     continue;
                 }
 
-                DB::transaction(function () use ($vendor, $provider, $item) {
+                DB::transaction(function () use ($vendor, $provider, $item, $type) {
                     $model = AiModel::firstOrCreate(
                         ['vendor_id' => $vendor->id, 'slug' => Str::after($item['id'], '/')],
                         [
-                            'type' => AiModelType::Text,
+                            'type' => $type,
                             // «Anthropic: Claude Haiku 5.5» → «Claude Haiku 5.5»
                             'name' => Str::contains($item['name'] ?? '', ': ') ? Str::after($item['name'], ': ') : ($item['name'] ?? $item['id']),
                             'is_active' => false,
@@ -85,7 +85,7 @@ class PolzaCatalog
                     $offer = $model->offerings()->create([
                         'provider_id' => $provider->id,
                         'external_id' => $item['id'],
-                        'price_web_search' => config('ai.providers.polza.web_search_price'),
+                        'price_web_search' => $type === AiModelType::Text ? config('ai.providers.polza.web_search_price') : null,
                         ...self::offerAttributes($item),
                     ]);
                     $offer->syncCapabilities(array_fill_keys(self::capabilities($item), null));
@@ -100,15 +100,15 @@ class PolzaCatalog
     /**
      * @return list<array<string, mixed>>
      */
-    private function catalog(): array
+    private function catalog(AiModelType $type): array
     {
         $config = config('ai.providers.polza');
 
-        // Импорт и обновление цен в одной команде — один запрос к каталогу
-        return $this->catalog ??= Http::withToken($config['key'])
+        // Импорт и обновление цен в одной команде — один запрос к каталогу каждого типа
+        return $this->catalogs[$type->value] ??= Http::withToken($config['key'])
             ->timeout(20)
             ->retry(2, 500)
-            ->get(rtrim($config['url'], '/').'/models', ['type' => 'chat'])
+            ->get(rtrim($config['url'], '/').'/models', ['type' => $type === AiModelType::Image ? 'image' : 'chat'])
             ->throw()
             ->json('data', []);
     }
@@ -129,6 +129,15 @@ class PolzaCatalog
         $top = $item['top_provider'];
         $pricing = $top['pricing'] ?? [];
 
+        // Картинки: цена — за запрос или ступенями (по разрешению, качеству, числу референсов), параметры — схемой
+        if (($item['type'] ?? 'chat') === 'image') {
+            return [
+                'pricing' => $pricing,
+                'parameters' => $top['parameters'] ?? $item['parameters'] ?? [],
+                'price_currency' => $pricing['currency'] ?? 'RUB',
+            ];
+        }
+
         return [
             'price_input' => $pricing['prompt_per_million'] ?? null,
             'price_output' => $pricing['completion_per_million'] ?? null,
@@ -148,6 +157,13 @@ class PolzaCatalog
      */
     public static function capabilities(array $item): array
     {
+        // Модель картинок: умеет ли брать референсы
+        if (($item['type'] ?? 'chat') === 'image') {
+            $references = (int) (($item['top_provider']['parameters'] ?? $item['parameters'] ?? [])['images']['max'] ?? 0);
+
+            return $references > 0 ? [Capability::Images->value] : [];
+        }
+
         $parameters = $item['top_provider']['supported_parameters'] ?? [];
         $inputs = $item['architecture']['input_modalities'] ?? [];
 

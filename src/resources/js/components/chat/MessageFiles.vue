@@ -1,12 +1,21 @@
 <script setup>
 import { FileText } from 'lucide-vue-next';
+import { computed } from 'vue';
+import { openLightbox } from '@/composables/useLightbox';
 
 /**
- * Файлы, приложенные к вопросу: картинки превью, документы — чипом. Клик открывает оригинал.
+ * Файлы, приложенные к вопросу: картинки превью (клик — во весь экран), документы — чипом (открываются вкладкой).
  */
-defineProps({
+const props = defineProps({
     files: { type: Array, required: true },
 });
+
+const images = computed(() => props.files.filter((f) => f.kind === 'image'));
+const view = (event, file) => {
+    if (file.kind !== 'image') return;
+    event.preventDefault();
+    openLightbox(images.value, images.value.indexOf(file));
+};
 </script>
 
 <template>
@@ -19,6 +28,7 @@ defineProps({
             rel="noopener"
             :title="file.name"
             :class="file.kind === 'image' ? 'block overflow-hidden rounded-xl border border-fg/15' : 'glass-inset flex items-center gap-1.5 self-start rounded-xl px-2.5 py-1.5 text-xs text-fg/75 hover:text-fg'"
+            @click="view($event, file)"
         >
             <img
                 v-if="file.kind === 'image'"

@@ -1,12 +1,14 @@
 <script setup>
 import { Head, router, usePage } from '@inertiajs/vue3';
 import {
-    ArrowUp, Brain, Disc3, FileText, Globe, Hash, Info, Loader2, MessageSquare, Paperclip, Plus, RotateCcw, SlidersHorizontal, Users, X, Zap,
+    ArrowUp, Brain, Disc3, Globe, Hash, Info, MessageSquare, Paperclip, Plus, RotateCcw, SlidersHorizontal, Users, X, Zap,
 } from 'lucide-vue-next';
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, toRef, watch, watchEffect } from 'vue';
 import AppLayout from '@/layouts/AppLayout.vue';
 import AnswerCard from '@/components/chat/AnswerCard.vue';
 import AnswerCarousel from '@/components/chat/AnswerCarousel.vue';
+import DropOverlay from '@/components/chat/DropOverlay.vue';
+import FileChips from '@/components/chat/FileChips.vue';
 import MessageActions from '@/components/chat/MessageActions.vue';
 import QuestionBubble from '@/components/chat/QuestionBubble.vue';
 import GlassToggle from '@/components/GlassToggle.vue';
@@ -16,6 +18,7 @@ import EmptyHero from '@/components/chat/EmptyHero.vue';
 import UsageRing from '@/components/chat/UsageRing.vue';
 import VendorIcon from '@/components/VendorIcon.vue';
 import { loadLibrary, useAttachments } from '@/composables/useAttachments';
+import { useFileDrop } from '@/composables/useFileDrop';
 import { fuzzy, useComposerMenu } from '@/composables/useComposerMenu';
 import { useChatPreferences } from '@/composables/useChatPreferences';
 import { useMediaQuery } from '@/composables/useMediaQuery';
@@ -288,10 +291,9 @@ watchEffect(() => {
 });
 
 // ── Контекст запроса: картриджи (#) и призванные модели (@) ──
-// В начатом чате — те же картриджи, что у последнего вопроса; в новом — закреплённые
-const plateExists = (id) => props.plates.some((p) => p.id === id);
-const initialPlates = () =>
-    (props.chat?.plate_ids?.length ? props.chat.plate_ids : props.plates.filter((p) => p.is_pinned).map((p) => p.id)).filter(plateExists);
+// Картридж прикладывается к сообщению и действует с этого места разговора; над полем ввода — то,
+// что уйдёт со следующим. В новом чате закреплённые прикладываются сами, в начатом — ничего
+const initialPlates = () => (props.chat ? [] : props.plates.filter((p) => p.is_pinned).map((p) => p.id));
 const attachedPlates = ref(initialPlates());
 const attached = computed(() => attachedPlates.value.map((id) => props.plates.find((p) => p.id === id)).filter(Boolean));
 const attachedTokens = computed(() => attached.value.reduce((sum, p) => sum + p.tokens, 0));
@@ -309,40 +311,8 @@ const attachments = useAttachments(props.fileLimits, (text) => (error.value = te
 const { items: fileItems, ids: fileIds, uploading: filesUploading } = attachments;
 const attachedFileIds = computed(() => fileItems.value.filter((i) => i.file).map((i) => i.file.id));
 
-// Перетащили файл в окно — сразу загружаем; подложка-подсказка, пока файл над окном
-const dragging = ref(false);
-let dragDepth = 0;
-const carriesFiles = (event) => event.dataTransfer?.types?.includes('Files');
-const onDragEnter = (event) => {
-    if (!carriesFiles(event)) return;
-    event.preventDefault();
-    dragDepth++;
-    dragging.value = true;
-};
-const onDragOver = (event) => carriesFiles(event) && event.preventDefault();
-const onDragLeave = (event) => {
-    if (!carriesFiles(event)) return;
-    dragDepth = Math.max(0, dragDepth - 1);
-    dragging.value = dragDepth > 0;
-};
-const onDrop = (event) => {
-    if (!carriesFiles(event)) return;
-    event.preventDefault();
-    dragDepth = 0;
-    dragging.value = false;
-    attachments.add(event.dataTransfer.files);
-};
-const DRAG_EVENTS = { dragenter: onDragEnter, dragover: onDragOver, dragleave: onDragLeave, drop: onDrop };
-onMounted(() => Object.entries(DRAG_EVENTS).forEach(([name, handler]) => window.addEventListener(name, handler)));
-onBeforeUnmount(() => Object.entries(DRAG_EVENTS).forEach(([name, handler]) => window.removeEventListener(name, handler)));
-
-// Скриншот из буфера (Ctrl+V) — тоже сразу в загрузку
-const onPaste = (event) => {
-    const files = [...(event.clipboardData?.files ?? [])];
-    if (!files.length) return;
-    event.preventDefault();
-    attachments.add(files);
-};
+// Перетащили файл в окно или вставили скриншот — сразу в загрузку
+const { dragging, onPaste } = useFileDrop((files) => attachments.add(files));
 
 // @модель в сообщении: этот вопрос — именно ей (несколько — мульти-запрос), выбор в панели не меняется
 const mentioned = ref([]);
@@ -456,6 +426,8 @@ const send = async () => {
     const local = messages.value.length - 1;
     const localFiles = messages.value[local].files;
     const takenFiles = attachments.take();
+    const takenPlates = attachedPlates.value;
+    attachedPlates.value = [];
     message.value = '';
     scrollToBottom();
 
@@ -465,7 +437,7 @@ const send = async () => {
             chat_id: chatId.value,
             ai_model_ids: sendTargets.value,
             content,
-            plate_ids: attachedPlates.value,
+            plate_ids: takenPlates,
             file_ids: sentFileIds,
             ...responseOptions(),
         });
@@ -473,6 +445,7 @@ const send = async () => {
         messages.value.splice(local, 1);
         message.value = content;
         attachments.restore(takenFiles);
+        attachedPlates.value = takenPlates;
         error.value = e.message;
         // Отказ мог быть из-за лимита — кольцо энергии должно показать актуальное
         router.reload({ only: ['usage'] });
@@ -743,29 +716,7 @@ const onKeydown = (event) => {
             <form v-frost class="glass flex flex-col rounded-[22px] px-2 py-1.5 md:rounded-[28px] md:px-4 md:py-3" @submit.prevent="send">
                 <!-- Что уйдёт с вопросом: призванные модели и пластинки картриджей (крутятся, пока модель отвечает) -->
                 <div v-if="mentionedModels.length || attached.length || fileItems.length" class="flex flex-wrap items-center gap-1 px-1 pb-1">
-                    <!-- Файлы: превью сразу, пока сжимаются и грузятся -->
-                    <template v-for="f in fileItems" :key="f.key">
-                        <span v-if="f.kind === 'image'" class="relative size-10 shrink-0 overflow-hidden rounded-lg border border-fg/20" :title="f.name">
-                            <img
-                                :src="f.preview ?? f.file?.thumb_url ?? f.file?.url"
-                                alt=""
-                                class="size-full object-cover transition"
-                                :class="{ 'opacity-50': f.status === 'uploading' }"
-                            />
-                            <Loader2 v-if="f.status === 'uploading'" class="absolute inset-0 m-auto size-4 animate-spin text-white" :stroke-width="2" />
-                            <button type="button" class="absolute top-0.5 right-0.5 rounded-full bg-black/45 p-0.5 text-white" title="Убрать" @click="attachments.remove(f.key)">
-                                <X class="size-2.5" :stroke-width="2.5" />
-                            </button>
-                        </span>
-                        <span v-else class="glass-inset flex items-center gap-1 rounded-full py-0.5 pr-0.5 pl-1.5 text-xs text-fg/75" :title="f.name">
-                            <Loader2 v-if="f.status === 'uploading'" class="size-3.5 animate-spin text-cool-soft" :stroke-width="1.5" />
-                            <FileText v-else class="size-3.5 text-cool-soft" :stroke-width="1.5" />
-                            <span class="max-w-40 truncate">{{ f.name }}</span>
-                            <button type="button" class="rounded-full p-0.5 text-fg/40 hover:text-fg" title="Убрать" @click="attachments.remove(f.key)">
-                                <X class="size-3" :stroke-width="2" />
-                            </button>
-                        </span>
-                    </template>
+                    <FileChips :items="fileItems" @remove="attachments.remove" />
                     <span
                         v-for="m in mentionedModels"
                         :key="`m${m.id}`"
@@ -780,15 +731,15 @@ const onKeydown = (event) => {
                         v-for="p in attached"
                         :key="`p${p.id}`"
                         class="glass-inset flex items-center gap-1 rounded-full py-0.5 pr-0.5 pl-1 text-xs text-fg/75"
-                        :title="`≈ ${p.tokens} токенов к каждому запросу`"
+                        :title="`≈ ${p.tokens} токенов — уйдёт с этим сообщением`"
                     >
                         <Disc3 class="size-3.5 text-cool-soft" :class="{ 'animate-spin [animation-duration:2.4s]': busy }" :stroke-width="1.5" />
                         {{ p.title }}
-                        <button type="button" class="rounded-full p-0.5 text-fg/40 hover:text-fg" title="Не подключать к этому чату" @click="detachPlate(p.id)">
+                        <button type="button" class="rounded-full p-0.5 text-fg/40 hover:text-fg" title="Не прикладывать к сообщению" @click="detachPlate(p.id)">
                             <X class="size-3" :stroke-width="2" />
                         </button>
                     </span>
-                    <span v-if="attached.length" class="ml-auto pr-1 text-[11px] text-fg/35 tabular-nums" title="Примерно столько токенов картриджи добавят к каждому запросу">
+                    <span v-if="attached.length" class="ml-auto pr-1 text-[11px] text-fg/35 tabular-nums" title="Примерно столько токенов картриджи добавят к разговору — один раз, с этим сообщением">
                         ≈ {{ attachedTokens }} ток.
                     </span>
                 </div>
@@ -838,18 +789,7 @@ const onKeydown = (event) => {
 
         <FilePicker v-if="pickerUsed" v-model:open="pickerOpen" :attached-ids="attachedFileIds" @toggle="attachments.toggle" @upload="attachments.add" />
 
-        <!-- Файл над окном: отпустите — прикрепится -->
-        <Teleport to="body">
-            <Transition enter-active-class="transition duration-150" enter-from-class="opacity-0" leave-active-class="transition duration-150" leave-to-class="opacity-0">
-                <div v-if="dragging" class="pointer-events-none fixed inset-0 z-[60] flex items-center justify-center bg-black/20 p-4 backdrop-blur-[2px]">
-                    <div class="glass rounded-3xl border-2 border-dashed px-8 py-6 text-center">
-                        <Paperclip class="mx-auto mb-2 size-7 text-cool-soft" :stroke-width="1.5" />
-                        <p class="text-sm md:text-base">Отпустите — файл прикрепится к вопросу</p>
-                        <p class="mt-1 text-xs text-fg/50">Картинки и PDF</p>
-                    </div>
-                </div>
-            </Transition>
-        </Teleport>
+        <DropOverlay :show="dragging" />
 
         <!-- Вторая половина пустого экрана — поле ввода стоит ровно по центру; тут же подсказка -->
         <div v-if="isEmpty" class="flex min-h-0 flex-1 flex-col items-center px-4 pt-3 text-center">
